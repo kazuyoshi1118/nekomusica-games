@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Night Runner — 夜を駆ける | NEKOMUSICA</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#08060f;display:flex;justify-content:center;align-items:center;height:100vh;overflow:hidden;font-family:'Segoe UI',sans-serif;touch-action:none;user-select:none}
+canvas{border-radius:12px;box-shadow:0 0 50px rgba(138,92,246,0.3)}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<script>
+const canvas=document.getElementById('game'),ctx=canvas.getContext('2d');
+const MAX_W=400,MAX_H=700;
+let scale=1;
+function resize(){scale=Math.min(window.innerWidth/MAX_W,window.innerHeight/MAX_H,1);canvas.width=MAX_W*scale;canvas.height=MAX_H*scale;ctx.setTransform(scale,0,0,scale,0,0)}
+resize();window.addEventListener('resize',resize);
+
+let audioCtx=null;
+function initAudio(){if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)()}
+function playSound(f,d=0.1,t='sine'){if(!audioCtx)return;const o=audioCtx.createOscillator(),g=audioCtx.createGain();o.type=t;o.frequency.value=f;g.gain.setValueAtTime(0.08,audioCtx.currentTime);g.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+d);o.connect(g);g.connect(audioCtx.destination);o.start();o.stop(audioCtx.currentTime+d)}
+
+const STATE={TITLE:0,PLAY:1,OVER:2};
+const GROUND_Y=500,GRAVITY=0.6;
+let state=STATE.TITLE,frame=0,score=0,dist=0,notes=0,highScore=parseInt(localStorage.getItem('nightRunnerHigh')||'0');
+let cat={x:80,y:GROUND_Y,vy:0,grounded:true,runFrame:0};
+let platforms=[],obstacles=[],collectibles=[],particles=[];
+let speed=4,scrollX=0,jumping=false;
+let buildings=[],farBuildings=[];
+
+function initBuildings(){
+  buildings=[];farBuildings=[];
+  for(let i=0;i<15;i++){buildings.push({x:i*80,w:40+Math.random()*60,h:80+Math.random()*150})}
+  for(let i=0;i<10;i++){farBuildings.push({x:i*120,w:60+Math.random()*80,h:50+Math.random()*100})}
+}
+
+function startGame(){
+  initAudio();state=STATE.PLAY;frame=0;score=0;dist=0;notes=0;speed=4;scrollX=0;
+  cat={x:80,y:GROUND_Y-30,vy:0,grounded:false,runFrame:0};
+  platforms=[{x:0,w:300,y:GROUND_Y},{x:350,w:200,y:GROUND_Y},{x:600,w:250,y:GROUND_Y-30}];
+  obstacles=[];collectibles=[];particles=[];initBuildings();
+}
+
+function addP(x,y,c,n){for(let i=0;i<n;i++){const a=Math.random()*Math.PI*2,s=1+Math.random()*2;particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s-1,life:1,color:c,size:2+Math.random()*2})}}
+
+function jump(){
+  if(cat.grounded){cat.vy=-12;cat.grounded=false;playSound(440,0.1)}
+}
+
+canvas.addEventListener('touchstart',e=>{e.preventDefault();if(state===STATE.TITLE)startGame();else if(state===STATE.OVER)state=STATE.TITLE;else jump()},{passive:false});
+canvas.addEventListener('mousedown',()=>{if(state===STATE.TITLE)startGame();else if(state===STATE.OVER)state=STATE.TITLE;else jump()});
+document.addEventListener('keydown',e=>{if(e.key===' '||e.key==='ArrowUp'){if(state===STATE.TITLE)startGame();else if(state===STATE.OVER)state=STATE.TITLE;else jump()}});
+
+function update(){
+  frame++;
+  if(state!==STATE.PLAY)return;
+  speed=4+frame*0.001;
+  scrollX+=speed;
+  dist=Math.floor(scrollX/10);
+
+  // Cat physics
+  cat.vy+=GRAVITY;
+  cat.y+=cat.vy;
+  cat.grounded=false;
+  cat.runFrame+=0.15;
+
+  // Platform collision
+  for(const p of platforms){
+    const px=p.x-scrollX;
+    if(cat.x+15>px&&cat.x-15<px+p.w){
+      if(cat.y+20>=p.y&&cat.y+20<=p.y+15&&cat.vy>=0){
+        cat.y=p.y-20;cat.vy=0;cat.grounded=true;
+      }
+    }
+  }
+
+  // Fall death
+  if(cat.y>MAX_H+50){
+    if(score>highScore){highScore=score;localStorage.setItem('nightRunnerHigh',String(highScore))}
+    state=STATE.OVER;return;
+  }
+
+  // Obstacle collision
+  for(const o of obstacles){
+    const ox=o.x-scrollX;
+    if(Math.abs(cat.x-ox)<20&&Math.abs(cat.y-o.y+15)<25){
+      addP(cat.x,cat.y,'#ff6b6b',15);playSound(150,0.3,'triangle');
+      if(score>highScore){highScore=score;localStorage.setItem('nightRunnerHigh',String(highScore))}
+      state=STATE.OVER;return;
+    }
+  }
+
+  // Collectibles
+  for(let i=collectibles.length-1;i>=0;i--){
+    const c=collectibles[i],cx=c.x-scrollX;
+    if(Math.abs(cat.x-cx)<25&&Math.abs(cat.y-c.y)<25){
+      notes++;score+=50;addP(cx,c.y,'#fbbf24',8);playSound(660+notes*30,0.15);collectibles.splice(i,1);
+    }
+  }
+
+  // Generate platforms
+  const lastP=platforms[platforms.length-1];
+  if(lastP.x+lastP.w-scrollX<MAX_W+200){
+    const gap=60+Math.random()*80;
+    const w=120+Math.random()*180;
+    const dy=(Math.random()-0.5)*60;
+    platforms.push({x:lastP.x+lastP.w+gap,w,y:Math.max(350,Math.min(550,lastP.y+dy))});
+    // Add obstacle sometimes
+    if(Math.random()<0.3){const px=lastP.x+lastP.w+gap+40+Math.random()*(w-80);obstacles.push({x:px,y:platforms[platforms.length-1].y-25})}
+    // Add collectible
+    if(Math.random()<0.6){const cx=lastP.x+lastP.w+gap+w/2;collectibles.push({x:cx,y:platforms[platforms.length-1].y-60-Math.random()*40})}
+  }
+
+  // Cleanup
+  platforms=platforms.filter(p=>p.x+p.w-scrollX>-100);
+  obstacles=obstacles.filter(o=>o.x-scrollX>-100);
+  collectibles=collectibles.filter(c=>c.x-scrollX>-100);
+
+  score=dist+notes*50;
+
+  // Particles
+  if(cat.grounded&&frame%3===0)particles.push({x:cat.x-10,y:cat.y+18,vx:-1-Math.random(),vy:-Math.random(),life:0.5,color:'rgba(138,92,246,0.5)',size:2});
+  for(let i=particles.length-1;i>=0;i--){const p=particles[i];p.x+=p.vx;p.y+=p.vy;p.vy+=0.05;p.life-=0.03;if(p.life<=0)particles.splice(i,1)}
+}
+
+function drawBg(){
+  const g=ctx.createLinearGradient(0,0,0,MAX_H);g.addColorStop(0,'#08060f');g.addColorStop(0.6,'#12102a');g.addColorStop(1,'#1a1535');
+  ctx.fillStyle=g;ctx.fillRect(0,0,MAX_W,MAX_H);
+  // Stars
+  for(let i=0;i<40;i++){ctx.fillStyle=`rgba(255,255,255,${0.2+Math.sin(frame*0.008+i)*0.15})`;ctx.beginPath();ctx.arc((i*137.5+frame*0.05)%MAX_W,(i*67.3)%(MAX_H*0.4),0.8,0,Math.PI*2);ctx.fill()}
+  // Moon
+  ctx.fillStyle='#fbbf24';ctx.globalAlpha=0.8;ctx.beginPath();ctx.arc(320,80,30,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='#08060f';ctx.beginPath();ctx.arc(332,72,25,0,Math.PI*2);ctx.fill();ctx.globalAlpha=1;
+  // Far buildings
+  ctx.fillStyle='#0d0b1a';
+  for(const b of farBuildings){const bx=((b.x-scrollX*0.2)%1200+1200)%1200-200;ctx.fillRect(bx,GROUND_Y+60-b.h,b.w,b.h+200)}
+  // Near buildings
+  ctx.fillStyle='#15122a';
+  for(const b of buildings){const bx=((b.x-scrollX*0.5)%1200+1200)%1200-200;ctx.fillRect(bx,GROUND_Y+40-b.h,b.w,b.h+200);
+    // Windows
+    ctx.fillStyle='rgba(138,92,246,0.15)';
+    for(let wy=GROUND_Y+40-b.h+10;wy<GROUND_Y+30;wy+=20)for(let wx=bx+8;wx<bx+b.w-8;wx+=15)ctx.fillRect(wx,wy,6,8);
+    ctx.fillStyle='#15122a';
+  }
+}
+
+function drawPlatforms(){
+  for(const p of platforms){
+    const px=p.x-scrollX;
+    ctx.fillStyle='#1e1a3a';ctx.fillRect(px,p.y,p.w,15);
+    ctx.fillStyle='#8a5cf6';ctx.fillRect(px,p.y,p.w,3);
+    // Edge glow
+    ctx.fillStyle='rgba(138,92,246,0.2)';ctx.fillRect(px,p.y+3,p.w,12);
+  }
+}
+
+function drawCat(){
+  const bounce=cat.grounded?Math.sin(cat.runFrame)*3:0;
+  const x=cat.x,y=cat.y+bounce;
+  // Body
+  ctx.fillStyle='#333';ctx.beginPath();ctx.ellipse(x,y,15,12,0,0,Math.PI*2);ctx.fill();
+  // Head
+  ctx.beginPath();ctx.ellipse(x+8,y-8,10,9,0.2,0,Math.PI*2);ctx.fill();
+  // Ears
+  ctx.beginPath();ctx.moveTo(x+3,y-14);ctx.lineTo(x+6,y-24);ctx.lineTo(x+12,y-14);ctx.fill();
+  ctx.beginPath();ctx.moveTo(x+10,y-14);ctx.lineTo(x+14,y-24);ctx.lineTo(x+18,y-12);ctx.fill();
+  // Eyes
+  ctx.fillStyle='#fbbf24';ctx.beginPath();ctx.arc(x+11,y-9,2,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(x+5,y-9,2,0,Math.PI*2);ctx.fill();
+  // Tail
+  ctx.strokeStyle='#333';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(x-15,y);
+  ctx.quadraticCurveTo(x-25,y-15+Math.sin(frame*0.1)*5,x-20,y-20+Math.sin(frame*0.08)*8);ctx.stroke();
+}
+
+function drawObstacles(){for(const o of obstacles){const ox=o.x-scrollX;ctx.fillStyle='#ff6b6b';ctx.fillRect(ox-8,o.y,16,25);ctx.fillStyle='#ff8787';ctx.fillRect(ox-6,o.y+2,12,4)}}
+function drawCollectibles(){ctx.textAlign='center';ctx.textBaseline='middle';for(const c of collectibles){const cx=c.x-scrollX;ctx.shadowColor='#fbbf24';ctx.shadowBlur=10;ctx.fillStyle='#fbbf24';ctx.font='20px sans-serif';ctx.fillText('♪',cx,c.y+Math.sin(frame*0.05)*5);ctx.shadowBlur=0}}
+function drawParticles(){for(const p of particles){ctx.globalAlpha=p.life;ctx.fillStyle=p.color;ctx.beginPath();ctx.arc(p.x,p.y,p.size,0,Math.PI*2);ctx.fill()}ctx.globalAlpha=1}
+function drawHUD(){ctx.textAlign='left';ctx.fillStyle='#fff';ctx.font='bold 16px sans-serif';ctx.fillText(`${dist}m`,15,35);
+  ctx.textAlign='right';ctx.fillStyle='#fbbf24';ctx.font='bold 16px sans-serif';ctx.fillText(`♪ ${notes}`,MAX_W-15,35)}
+
+function drawTitle(){drawBg();ctx.textAlign='center';
+  ctx.shadowColor='#8a5cf6';ctx.shadowBlur=30;ctx.fillStyle='#fff';ctx.font='bold 38px sans-serif';ctx.fillText('Night Runner',MAX_W/2,240);ctx.shadowBlur=0;
+  ctx.fillStyle='#a78bfa';ctx.font='18px sans-serif';ctx.fillText('— 夜を駆ける —',MAX_W/2,275);
+  ctx.fillStyle='#9790a8';ctx.font='14px sans-serif';ctx.fillText('タップでジャンプ！',MAX_W/2,320);ctx.fillText('屋根を飛び移って音符を集めよう',MAX_W/2,342);
+  const a=0.4+Math.sin(frame*0.05)*0.4;ctx.fillStyle=`rgba(255,255,255,${a})`;ctx.font='16px sans-serif';ctx.fillText('Tap to Start',MAX_W/2,520);
+  if(highScore>0){ctx.fillStyle='#fbbf24';ctx.font='14px sans-serif';ctx.fillText(`High Score: ${highScore}`,MAX_W/2,560)}
+  ctx.fillStyle='#4a4560';ctx.font='11px sans-serif';ctx.fillText('NEKOMUSICA',MAX_W/2,MAX_H-30)}
+
+function drawOver(){drawBg();ctx.fillStyle='rgba(0,0,0,0.5)';ctx.fillRect(0,0,MAX_W,MAX_H);ctx.textAlign='center';
+  ctx.shadowColor='#ff6b9d';ctx.shadowBlur=20;ctx.fillStyle='#fff';ctx.font='bold 32px sans-serif';ctx.fillText('Game Over',MAX_W/2,240);ctx.shadowBlur=0;
+  ctx.fillStyle='#fff';ctx.font='22px sans-serif';ctx.fillText(`${score}`,MAX_W/2,300);ctx.fillStyle='#9790a8';ctx.font='14px sans-serif';ctx.fillText(`${dist}m / ♪ ${notes}`,MAX_W/2,330);
+  if(score>=highScore&&score>0){ctx.fillStyle='#fbbf24';ctx.font='bold 16px sans-serif';ctx.fillText('New High Score!',MAX_W/2,370)}
+  const a=0.4+Math.sin(frame*0.05)*0.4;ctx.fillStyle=`rgba(255,255,255,${a})`;ctx.font='16px sans-serif';ctx.fillText('Tap to Continue',MAX_W/2,460);
+  ctx.fillStyle='#4a4560';ctx.font='11px sans-serif';ctx.fillText('NEKOMUSICA',MAX_W/2,MAX_H-30)}
+
+function loop(){update();
+  if(state===STATE.TITLE){drawTitle()}
+  else if(state===STATE.PLAY){drawBg();drawPlatforms();drawObstacles();drawCollectibles();drawCat();drawParticles();drawHUD()}
+  else drawOver();
+  requestAnimationFrame(loop)}
+loop();
+</script>
+</body>
+</html>

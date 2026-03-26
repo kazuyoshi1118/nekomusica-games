@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Babel Tower — バベルの塔 | NEKOMUSICA</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#08060f;display:flex;justify-content:center;align-items:center;height:100vh;overflow:hidden;font-family:'Segoe UI',sans-serif;touch-action:none;user-select:none}
+canvas{border-radius:12px;box-shadow:0 0 50px rgba(138,92,246,0.3)}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<script>
+const canvas=document.getElementById('game'),ctx=canvas.getContext('2d');
+const MAX_W=400,MAX_H=700;
+let scale=1;
+function resize(){scale=Math.min(window.innerWidth/MAX_W,window.innerHeight/MAX_H,1);canvas.width=MAX_W*scale;canvas.height=MAX_H*scale;ctx.setTransform(scale,0,0,scale,0,0)}
+resize();window.addEventListener('resize',resize);
+
+let audioCtx=null;
+function initAudio(){if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)()}
+const NOTES=[261.6,293.7,329.6,392,440,523.3,587.3,659.3,784,880,1047];
+function playStack(i){if(!audioCtx)return;const o=audioCtx.createOscillator(),g=audioCtx.createGain();o.type='sine';o.frequency.value=NOTES[Math.min(i,NOTES.length-1)];g.gain.setValueAtTime(0.1,audioCtx.currentTime);g.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+0.3);o.connect(g);g.connect(audioCtx.destination);o.start();o.stop(audioCtx.currentTime+0.3)}
+function playPerfect(i){if(!audioCtx)return;[0,4,7].forEach((n,j)=>setTimeout(()=>{const o=audioCtx.createOscillator(),g=audioCtx.createGain();o.type='sine';o.frequency.value=NOTES[Math.min(i+n,NOTES.length-1)]*1;g.gain.setValueAtTime(0.08,audioCtx.currentTime);g.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+0.4);o.connect(g);g.connect(audioCtx.destination);o.start();o.stop(audioCtx.currentTime+0.4)},j*60))}
+function playFail(){if(!audioCtx)return;const o=audioCtx.createOscillator(),g=audioCtx.createGain();o.type='triangle';o.frequency.value=150;g.gain.setValueAtTime(0.1,audioCtx.currentTime);g.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+0.5);o.connect(g);g.connect(audioCtx.destination);o.start();o.stop(audioCtx.currentTime+0.5)}
+
+const BLOCK_H=25,BASE_W=200;
+const STATE={TITLE:0,PLAY:1,OVER:2};
+let state=STATE.TITLE,frame=0,score=0,perfects=0,highScore=parseInt(localStorage.getItem('babelHigh')||'0');
+let tower=[],moving=null,cameraY=0,particles=[];
+let falling=[];
+
+function startGame(){
+  initAudio();state=STATE.PLAY;score=0;perfects=0;frame=0;particles=[];falling=[];
+  tower=[{x:MAX_W/2-BASE_W/2,w:BASE_W,y:0}];
+  cameraY=0;
+  spawnBlock();
+}
+
+function spawnBlock(){
+  const last=tower[tower.length-1];
+  const w=last.w;
+  const dir=tower.length%2===0?1:-1;
+  moving={x:dir>0?-w:MAX_W,w,speed:3+tower.length*0.15,dir,y:tower.length};
+}
+
+function place(){
+  if(!moving)return;
+  const last=tower[tower.length-1];
+  const mLeft=moving.x,mRight=moving.x+moving.w;
+  const tLeft=last.x,tRight=last.x+last.w;
+  const overlapLeft=Math.max(mLeft,tLeft);
+  const overlapRight=Math.min(mRight,tRight);
+  const overlapW=overlapRight-overlapLeft;
+
+  if(overlapW<=0){
+    // Complete miss
+    falling.push({x:moving.x,w:moving.w,y:moving.y,vy:0,color:getBlockColor(tower.length)});
+    playFail();
+    moving=null;
+    if(score>highScore){highScore=score;localStorage.setItem('babelHigh',String(highScore))}
+    state=STATE.OVER;
+    return;
+  }
+
+  const perfect=Math.abs(overlapW-last.w)<4;
+  if(perfect){
+    // Perfect placement - keep same width
+    tower.push({x:last.x,w:last.w,y:tower.length});
+    score++;perfects++;
+    addP(MAX_W/2,getBlockScreenY(tower.length-1),'#fbbf24',20);
+    playPerfect(tower.length-1);
+  }else{
+    tower.push({x:overlapLeft,w:overlapW,y:tower.length});
+    score++;perfects=0;
+    playStack(tower.length-1);
+    // Falling piece
+    if(mLeft<tLeft)falling.push({x:mLeft,w:tLeft-mLeft,y:tower.length-1,vy:0,color:getBlockColor(tower.length-1)});
+    if(mRight>tRight)falling.push({x:tRight,w:mRight-tRight,y:tower.length-1,vy:0,color:getBlockColor(tower.length-1)});
+  }
+
+  spawnBlock();
+}
+
+function getBlockColor(i){
+  const t=i/30;
+  const r=Math.floor(100+60*Math.sin(t*2));
+  const g=Math.floor(60+40*Math.sin(t*3+1));
+  const b=Math.floor(180+60*Math.sin(t*1.5+2));
+  return`rgb(${r},${g},${b})`;
+}
+
+function getBlockScreenY(level){return MAX_H-80-level*BLOCK_H+cameraY}
+
+function addP(x,y,c,n){for(let i=0;i<n;i++){const a=Math.random()*Math.PI*2,s=2+Math.random()*4;particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s-2,life:1,color:c,size:2+Math.random()*3})}}
+
+canvas.addEventListener('touchstart',e=>{e.preventDefault();if(state===STATE.TITLE)startGame();else if(state===STATE.OVER)state=STATE.TITLE;else place()},{passive:false});
+canvas.addEventListener('click',()=>{if(state===STATE.TITLE)startGame();else if(state===STATE.OVER)state=STATE.TITLE;else place()});
+document.addEventListener('keydown',e=>{if(e.key===' '){if(state===STATE.TITLE)startGame();else if(state===STATE.OVER)state=STATE.TITLE;else place()}});
+
+function update(){
+  frame++;
+  if(state===STATE.PLAY&&moving){
+    moving.x+=moving.speed*moving.dir;
+    if(moving.x>MAX_W)moving.dir=-1;
+    if(moving.x+moving.w<0)moving.dir=1;
+    // Camera
+    const targetCam=Math.max(0,(tower.length-12)*BLOCK_H);
+    cameraY+=(targetCam-cameraY)*0.08;
+  }
+  // Falling pieces
+  for(let i=falling.length-1;i>=0;i--){falling[i].vy+=0.3;falling[i].y-=falling[i].vy/BLOCK_H;if(getBlockScreenY(falling[i].y)>MAX_H+50)falling.splice(i,1)}
+  for(let i=particles.length-1;i>=0;i--){const p=particles[i];p.x+=p.vx;p.y+=p.vy;p.vy+=0.1;p.life-=0.02;if(p.life<=0)particles.splice(i,1)}
+}
+
+function drawBg(){
+  const g=ctx.createLinearGradient(0,0,0,MAX_H);
+  const progress=Math.min(1,tower.length/30);
+  if(progress<0.5){g.addColorStop(0,'#08060f');g.addColorStop(1,'#1a1535')}
+  else{g.addColorStop(0,'#0a0520');g.addColorStop(0.5,'#1a1040');g.addColorStop(1,'#201848')}
+  ctx.fillStyle=g;ctx.fillRect(0,0,MAX_W,MAX_H);
+  // Stars
+  for(let i=0;i<50;i++){const sy=((i*97.3)-cameraY*0.3+MAX_H*2)%(MAX_H*2)-MAX_H*0.5;ctx.fillStyle=`rgba(255,255,255,${0.2+Math.sin(frame*0.01+i)*0.15})`;ctx.beginPath();ctx.arc((i*137.5)%MAX_W,sy,0.8,0,Math.PI*2);ctx.fill()}
+  // Moon
+  const moonY=100-cameraY*0.1;
+  ctx.fillStyle='rgba(251,191,36,0.7)';ctx.beginPath();ctx.arc(330,moonY,25,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle=progress<0.5?'#08060f':'#0a0520';ctx.beginPath();ctx.arc(340,moonY-5,22,0,Math.PI*2);ctx.fill();
+}
+
+function drawTower(){
+  for(let i=0;i<tower.length;i++){
+    const b=tower[i],sy=getBlockScreenY(i);
+    if(sy<-30||sy>MAX_H+30)continue;
+    const color=getBlockColor(i);
+    ctx.fillStyle=color;ctx.shadowColor=color;ctx.shadowBlur=4;
+    ctx.fillRect(b.x,sy,b.w,BLOCK_H-2);
+    ctx.fillStyle='rgba(255,255,255,0.15)';ctx.fillRect(b.x,sy,b.w,4);
+    ctx.shadowBlur=0;
+  }
+  // Falling
+  for(const f of falling){
+    const sy=getBlockScreenY(f.y);
+    ctx.globalAlpha=0.6;ctx.fillStyle=f.color;ctx.fillRect(f.x,sy,f.w,BLOCK_H-2);ctx.globalAlpha=1;
+  }
+}
+
+function drawMoving(){
+  if(!moving)return;
+  const sy=getBlockScreenY(moving.y);
+  const color=getBlockColor(tower.length);
+  ctx.fillStyle=color;ctx.shadowColor=color;ctx.shadowBlur=8;
+  ctx.fillRect(moving.x,sy,moving.w,BLOCK_H-2);ctx.shadowBlur=0;
+}
+
+function drawParticles(){for(const p of particles){ctx.globalAlpha=p.life;ctx.fillStyle=p.color;ctx.beginPath();ctx.arc(p.x,p.y,p.size*p.life,0,Math.PI*2);ctx.fill()}ctx.globalAlpha=1}
+
+function drawHUD(){
+  ctx.textAlign='center';ctx.fillStyle='#fff';ctx.font='bold 24px sans-serif';ctx.fillText(`${score}`,MAX_W/2,35);
+  if(perfects>=2){ctx.fillStyle='#fbbf24';ctx.font='bold 14px sans-serif';ctx.fillText(`Perfect x${perfects}!`,MAX_W/2,58)}
+}
+
+function drawTitle(){drawBg();ctx.textAlign='center';
+  ctx.shadowColor='#8a5cf6';ctx.shadowBlur=30;ctx.fillStyle='#fff';ctx.font='bold 40px sans-serif';ctx.fillText('Babel Tower',MAX_W/2,240);ctx.shadowBlur=0;
+  ctx.fillStyle='#a78bfa';ctx.font='18px sans-serif';ctx.fillText('— バベルの塔 —',MAX_W/2,275);
+  ctx.fillStyle='#9790a8';ctx.font='14px sans-serif';ctx.fillText('タイミングよくタップして',MAX_W/2,320);ctx.fillText('ブロックを積み上げよう',MAX_W/2,342);
+  // Preview tower
+  for(let i=0;i<6;i++){const w=BASE_W-i*15;const c=getBlockColor(i);ctx.fillStyle=c;ctx.fillRect(MAX_W/2-w/2,460-i*BLOCK_H,w,BLOCK_H-2)}
+  const a=0.4+Math.sin(frame*0.05)*0.4;ctx.fillStyle=`rgba(255,255,255,${a})`;ctx.font='16px sans-serif';ctx.fillText('Tap to Start',MAX_W/2,550);
+  if(highScore>0){ctx.fillStyle='#fbbf24';ctx.font='14px sans-serif';ctx.fillText(`High Score: ${highScore}`,MAX_W/2,590)}
+  ctx.fillStyle='#4a4560';ctx.font='11px sans-serif';ctx.fillText('NEKOMUSICA',MAX_W/2,MAX_H-30)}
+
+function drawOver(){drawBg();drawTower();ctx.fillStyle='rgba(0,0,0,0.5)';ctx.fillRect(0,0,MAX_W,MAX_H);ctx.textAlign='center';
+  ctx.shadowColor='#ff6b9d';ctx.shadowBlur=20;ctx.fillStyle='#fff';ctx.font='bold 32px sans-serif';ctx.fillText('Game Over',MAX_W/2,240);ctx.shadowBlur=0;
+  ctx.fillStyle='#fff';ctx.font='bold 48px sans-serif';ctx.fillText(`${score}`,MAX_W/2,310);ctx.fillStyle='#9790a8';ctx.font='14px sans-serif';ctx.fillText('Blocks Stacked',MAX_W/2,340);
+  if(score>=highScore&&score>0){ctx.fillStyle='#fbbf24';ctx.font='bold 16px sans-serif';ctx.fillText('New High Score!',MAX_W/2,380)}
+  const a=0.4+Math.sin(frame*0.05)*0.4;ctx.fillStyle=`rgba(255,255,255,${a})`;ctx.font='16px sans-serif';ctx.fillText('Tap to Continue',MAX_W/2,460);
+  ctx.fillStyle='#4a4560';ctx.font='11px sans-serif';ctx.fillText('NEKOMUSICA',MAX_W/2,MAX_H-30)}
+
+function loop(){update();
+  if(state===STATE.TITLE)drawTitle();
+  else if(state===STATE.PLAY){drawBg();drawTower();drawMoving();drawParticles();drawHUD()}
+  else drawOver();
+  requestAnimationFrame(loop)}
+loop();
+</script>
+</body>
+</html>

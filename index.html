@@ -1,0 +1,908 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NEKOMUSICA - Indie Game Studio</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700;800&display=swap');
+
+:root {
+  --bg-deep: #08060f;
+  --bg-card: #110e1d;
+  --accent: #8a5cf6;
+  --accent-light: #a78bfa;
+  --accent-glow: rgba(138, 92, 246, 0.35);
+  --pink: #f472b6;
+  --cyan: #22d3ee;
+  --gold: #fbbf24;
+  --text: #e8e4f0;
+  --text-dim: #9790a8;
+  --radius: 16px;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--bg-deep);
+  color: var(--text);
+  font-family: 'Outfit', 'Segoe UI', sans-serif;
+  line-height: 1.6;
+  overflow-x: hidden;
+}
+
+/* ── Animated background ── */
+.bg-grid {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    radial-gradient(ellipse 80% 60% at 50% 0%, rgba(138,92,246,0.12) 0%, transparent 70%),
+    radial-gradient(ellipse 50% 40% at 80% 100%, rgba(244,114,182,0.08) 0%, transparent 60%);
+}
+
+.stars {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+.stars span {
+  position: absolute;
+  width: 2px;
+  height: 2px;
+  background: #fff;
+  border-radius: 50%;
+  animation: twinkle var(--dur) ease-in-out infinite alternate;
+}
+@keyframes twinkle {
+  0% { opacity: 0.15; }
+  100% { opacity: 0.8; }
+}
+
+/* ── Layout ── */
+.container {
+  position: relative;
+  z-index: 1;
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+/* ── Navigation ── */
+nav {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  padding: 16px 0;
+  backdrop-filter: blur(20px);
+  background: rgba(8, 6, 15, 0.7);
+  border-bottom: 1px solid rgba(138, 92, 246, 0.1);
+  transition: background 0.3s;
+}
+nav .container {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.nav-logo {
+  font-weight: 800;
+  font-size: 1.3rem;
+  letter-spacing: 2px;
+  color: #fff;
+  text-decoration: none;
+}
+.nav-logo .accent { color: var(--accent-light); }
+.nav-links { display: flex; gap: 32px; list-style: none; }
+.nav-links a {
+  color: var(--text-dim);
+  text-decoration: none;
+  font-size: 0.9rem;
+  font-weight: 400;
+  letter-spacing: 0.5px;
+  transition: color 0.25s;
+}
+.nav-links a:hover { color: #fff; }
+
+/* ── Hero ── */
+.hero {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  padding-top: 80px;
+}
+.hero-badge {
+  display: inline-block;
+  padding: 6px 18px;
+  border-radius: 100px;
+  border: 1px solid rgba(138,92,246,0.3);
+  background: rgba(138,92,246,0.08);
+  font-size: 0.8rem;
+  color: var(--accent-light);
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  margin-bottom: 28px;
+}
+.hero h1 {
+  font-size: clamp(3rem, 8vw, 5.5rem);
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: -1px;
+  margin-bottom: 20px;
+}
+.hero h1 .gradient {
+  background: linear-gradient(135deg, var(--accent-light) 0%, var(--pink) 50%, var(--cyan) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.hero-sub {
+  font-size: clamp(1rem, 2.5vw, 1.25rem);
+  color: var(--text-dim);
+  max-width: 520px;
+  margin-bottom: 40px;
+  font-weight: 300;
+}
+.hero-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 36px;
+  border-radius: 100px;
+  background: linear-gradient(135deg, var(--accent), #6d28d9);
+  color: #fff;
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 1rem;
+  letter-spacing: 0.5px;
+  transition: transform 0.25s, box-shadow 0.25s;
+  box-shadow: 0 4px 30px var(--accent-glow);
+}
+.hero-cta:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 40px var(--accent-glow);
+}
+.hero-scroll {
+  margin-top: 60px;
+  animation: float 3s ease-in-out infinite;
+  color: var(--text-dim);
+  font-size: 1.5rem;
+}
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(10px); }
+}
+
+/* ── Section common ── */
+section {
+  padding: 100px 0;
+}
+.section-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 3px;
+  color: var(--accent-light);
+  margin-bottom: 12px;
+}
+.section-title {
+  font-size: clamp(1.8rem, 4vw, 2.8rem);
+  font-weight: 700;
+  margin-bottom: 16px;
+}
+.section-desc {
+  color: var(--text-dim);
+  max-width: 560px;
+  margin-bottom: 48px;
+  font-weight: 300;
+}
+
+/* ── Games grid ── */
+.games-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 28px;
+}
+.game-card {
+  position: relative;
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  border: 1px solid rgba(138,92,246,0.12);
+  overflow: hidden;
+  transition: transform 0.3s, box-shadow 0.3s, border-color 0.3s;
+}
+.game-card:hover {
+  transform: translateY(-6px);
+  box-shadow: 0 20px 60px rgba(138,92,246,0.15);
+  border-color: rgba(138,92,246,0.3);
+}
+.card-visual {
+  position: relative;
+  height: 220px;
+  background: linear-gradient(135deg, #1a103a 0%, #0f172a 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.card-visual::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom, transparent 60%, var(--bg-card));
+}
+.card-visual canvas {
+  border-radius: 0;
+  box-shadow: none;
+}
+.card-tag {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  padding: 4px 12px;
+  border-radius: 100px;
+  background: rgba(0,0,0,0.5);
+  backdrop-filter: blur(8px);
+  font-size: 0.7rem;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--gold);
+  z-index: 2;
+}
+.card-body {
+  padding: 24px 28px 28px;
+}
+.card-body h3 {
+  font-size: 1.3rem;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+.card-body p {
+  color: var(--text-dim);
+  font-size: 0.9rem;
+  margin-bottom: 20px;
+  font-weight: 300;
+}
+.card-techs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+.card-techs span {
+  padding: 4px 12px;
+  border-radius: 100px;
+  background: rgba(138,92,246,0.1);
+  color: var(--accent-light);
+  font-size: 0.75rem;
+  letter-spacing: 0.5px;
+}
+.card-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 24px;
+  border-radius: 100px;
+  background: transparent;
+  border: 1px solid rgba(138,92,246,0.3);
+  color: var(--accent-light);
+  text-decoration: none;
+  font-size: 0.85rem;
+  font-weight: 500;
+  transition: background 0.25s, border-color 0.25s;
+}
+.card-btn:hover {
+  background: rgba(138,92,246,0.12);
+  border-color: var(--accent);
+}
+
+/* ── Coming soon card ── */
+.coming-soon {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 380px;
+  border-style: dashed;
+  border-color: rgba(138,92,246,0.2);
+}
+.coming-soon .icon {
+  font-size: 3rem;
+  margin-bottom: 16px;
+  opacity: 0.4;
+}
+.coming-soon h3 {
+  color: var(--text-dim);
+  font-weight: 400;
+}
+.coming-soon p {
+  color: var(--text-dim);
+  font-size: 0.85rem;
+  opacity: 0.6;
+}
+
+/* ── About section ── */
+.about-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 60px;
+  align-items: center;
+}
+.about-text p {
+  color: var(--text-dim);
+  margin-bottom: 20px;
+  font-weight: 300;
+  font-size: 1rem;
+}
+.about-text p strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.about-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+.stat-card {
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  border: 1px solid rgba(138,92,246,0.1);
+  padding: 28px 24px;
+  text-align: center;
+  transition: border-color 0.3s;
+}
+.stat-card:hover {
+  border-color: rgba(138,92,246,0.3);
+}
+.stat-card .num {
+  font-size: 2.2rem;
+  font-weight: 800;
+  background: linear-gradient(135deg, var(--accent-light), var(--pink));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.stat-card .label {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-top: 4px;
+}
+
+/* ── Philosophy cards ── */
+.philosophy-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+  margin-top: 48px;
+}
+.phil-card {
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  border: 1px solid rgba(138,92,246,0.1);
+  padding: 32px 28px;
+  transition: border-color 0.3s, transform 0.3s;
+}
+.phil-card:hover {
+  border-color: rgba(138,92,246,0.25);
+  transform: translateY(-3px);
+}
+.phil-icon {
+  font-size: 2rem;
+  margin-bottom: 16px;
+}
+.phil-card h3 {
+  font-size: 1.1rem;
+  margin-bottom: 10px;
+  font-weight: 600;
+}
+.phil-card p {
+  color: var(--text-dim);
+  font-size: 0.88rem;
+  font-weight: 300;
+}
+
+/* ── Footer ── */
+footer {
+  padding: 60px 0 40px;
+  border-top: 1px solid rgba(138,92,246,0.08);
+  text-align: center;
+}
+footer p {
+  color: var(--text-dim);
+  font-size: 0.85rem;
+}
+footer .logo-foot {
+  font-weight: 800;
+  font-size: 1.1rem;
+  letter-spacing: 2px;
+  color: #fff;
+  margin-bottom: 12px;
+}
+footer .logo-foot .accent { color: var(--accent-light); }
+
+/* ── Scroll animations ── */
+.reveal {
+  opacity: 0;
+  transform: translateY(40px);
+  transition: opacity 0.8s ease, transform 0.8s ease;
+}
+.reveal.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ── Responsive ── */
+@media (max-width: 768px) {
+  .nav-links { display: none; }
+  .about-grid { grid-template-columns: 1fr; gap: 40px; }
+  .philosophy-grid { grid-template-columns: 1fr; }
+  .games-grid { grid-template-columns: 1fr; }
+  section { padding: 60px 0; }
+}
+</style>
+</head>
+<body>
+
+<!-- Stars background -->
+<div class="stars" id="stars"></div>
+<div class="bg-grid"></div>
+
+<!-- Navigation -->
+<nav>
+  <div class="container">
+    <a href="#" class="nav-logo">NEKO<span class="accent">MUSICA</span></a>
+    <ul class="nav-links">
+      <li><a href="#games">Games</a></li>
+      <li><a href="#about">About</a></li>
+      <li><a href="#philosophy">Philosophy</a></li>
+    </ul>
+  </div>
+</nav>
+
+<!-- Hero -->
+<section class="hero">
+  <div class="container">
+    <div class="hero-badge">Indie Game Studio</div>
+    <h1>Play Free.<br><span class="gradient">Feel Everything.</span></h1>
+    <p class="hero-sub">NEKOMUSICAは「無課金で最高の体験」を届けるインディーゲームスタジオです。</p>
+    <a href="#games" class="hero-cta">
+      <span>&#9654;</span> ゲームを見る
+    </a>
+    <div class="hero-scroll">&#8964;</div>
+  </div>
+</section>
+
+<!-- Games -->
+<section id="games">
+  <div class="container">
+    <div class="reveal">
+      <div class="section-label">Games</div>
+      <h2 class="section-title">つくったもの</h2>
+      <p class="section-desc">ブラウザで動く、スマホでも遊べるゲームたち。</p>
+    </div>
+    <div class="games-grid">
+      <!-- Neko Catch -->
+      <div class="game-card reveal">
+        <div class="card-visual" id="neko-catch-preview">
+          <canvas id="preview-canvas" width="400" height="220"></canvas>
+          <span class="card-tag">Playable</span>
+        </div>
+        <div class="card-body">
+          <h3>Neko Catch!</h3>
+          <p>猫を操作して降ってくる音符をキャッチ。コンボを繋げてハイスコアを目指そう。</p>
+          <div class="card-techs">
+            <span>HTML5 Canvas</span>
+            <span>JavaScript</span>
+            <span>Web Audio</span>
+          </div>
+          <a href="neko_catch/index.html" class="card-btn">
+            <span>&#9654;</span> プレイする
+          </a>
+        </div>
+      </div>
+
+      <!-- Yorutabi -->
+      <div class="game-card reveal">
+        <div class="card-visual" id="yorutabi-preview">
+          <canvas id="yorutabi-canvas" width="400" height="220"></canvas>
+          <span class="card-tag">New</span>
+        </div>
+        <div class="card-body">
+          <h3>Yorutabi — 夜旅</h3>
+          <p>星を繋いで星座を描く。世界の夜空を旅するパズルゲーム。5つの星座があなたを待っている。</p>
+          <div class="card-techs">
+            <span>HTML5 Canvas</span>
+            <span>JavaScript</span>
+            <span>Web Audio</span>
+          </div>
+          <a href="yorutabi/index.html" class="card-btn">
+            <span>&#9654;</span> プレイする
+          </a>
+        </div>
+      </div>
+
+      <!-- Moon Rhythm -->
+      <div class="game-card reveal">
+        <div class="card-visual" style="background:linear-gradient(135deg,#1a103a,#0f172a);display:flex;align-items:center;justify-content:center">
+          <div style="text-align:center"><span style="font-size:48px">♪♫♩★</span><br><span style="color:#a78bfa;font-size:14px">4-Lane Rhythm</span></div>
+          <span class="card-tag">New</span>
+        </div>
+        <div class="card-body">
+          <h3>Moon Rhythm — 月のリズム</h3>
+          <p>4つのレーンに降ってくる音符をタイミングよくタップ。コンボを繋げてハイスコアを狙え。</p>
+          <div class="card-techs"><span>Rhythm</span><span>Web Audio</span></div>
+          <a href="rhythm_moon/index.html" class="card-btn"><span>&#9654;</span> プレイする</a>
+        </div>
+      </div>
+
+      <!-- Starfall -->
+      <div class="game-card reveal">
+        <div class="card-visual" style="background:linear-gradient(135deg,#1a103a,#0f172a);display:flex;align-items:center;justify-content:center">
+          <div style="text-align:center"><span style="font-size:48px">🌙</span><br><span style="color:#fbbf24;font-size:14px">Dodge & Collect</span></div>
+          <span class="card-tag">New</span>
+        </div>
+        <div class="card-body">
+          <h3>Starfall — 星降る夜</h3>
+          <p>三日月を操って星を集め、隕石を避けろ。シールドを取れば無敵に。</p>
+          <div class="card-techs"><span>Action</span><span>Touch</span></div>
+          <a href="starfall/index.html" class="card-btn"><span>&#9654;</span> プレイする</a>
+        </div>
+      </div>
+
+      <!-- Memory Night -->
+      <div class="game-card reveal">
+        <div class="card-visual" style="background:linear-gradient(135deg,#1a103a,#0f172a);display:flex;align-items:center;justify-content:center">
+          <div style="text-align:center"><span style="font-size:48px">♪☽★◆</span><br><span style="color:#f472b6;font-size:14px">Card Match</span></div>
+          <span class="card-tag">New</span>
+        </div>
+        <div class="card-body">
+          <h3>Memory Night — 記憶の夜</h3>
+          <p>カードをめくってペアを探せ。3レベルクリアで完全制覇。</p>
+          <div class="card-techs"><span>Puzzle</span><span>Memory</span></div>
+          <a href="memory_night/index.html" class="card-btn"><span>&#9654;</span> プレイする</a>
+        </div>
+      </div>
+
+      <!-- Sound Snake -->
+      <div class="game-card reveal">
+        <div class="card-visual" style="background:linear-gradient(135deg,#1a103a,#0f172a);display:flex;align-items:center;justify-content:center">
+          <div style="text-align:center"><span style="font-size:48px">🐍♪</span><br><span style="color:#4ade80;font-size:14px">Snake + Music</span></div>
+          <span class="card-tag">New</span>
+        </div>
+        <div class="card-body">
+          <h3>Sound Snake — 音蛇</h3>
+          <p>スワイプで蛇を操作。音符を食べるたびに音が鳴り、蛇が伸びる。</p>
+          <div class="card-techs"><span>Classic</span><span>Swipe</span></div>
+          <a href="sound_snake/index.html" class="card-btn"><span>&#9654;</span> プレイする</a>
+        </div>
+      </div>
+
+      <!-- Moon Bubbles -->
+      <div class="game-card reveal">
+        <div class="card-visual" style="background:linear-gradient(135deg,#1a103a,#0f172a);display:flex;align-items:center;justify-content:center">
+          <div style="text-align:center"><span style="font-size:48px">&#9679;&#9679;&#9679;</span><br><span style="color:#22d3ee;font-size:14px">Bubble Shooter</span></div>
+          <span class="card-tag">New</span>
+        </div>
+        <div class="card-body">
+          <h3>Moon Bubbles — 月の泡</h3>
+          <p>狙いを定めて泡を撃て。3つ以上揃えて消すバブルシューター。</p>
+          <div class="card-techs"><span>Puzzle</span><span>Aim</span></div>
+          <a href="moon_bubbles/index.html" class="card-btn"><span>&#9654;</span> プレイする</a>
+        </div>
+      </div>
+
+      <!-- Night Blocks -->
+      <div class="game-card reveal">
+        <div class="card-visual" style="background:linear-gradient(135deg,#1a103a,#0f172a);display:flex;align-items:center;justify-content:center">
+          <div style="text-align:center"><span style="font-size:36px">&#9647;&#9646;&#9645;</span><br><span style="color:#8a5cf6;font-size:14px">Falling Blocks</span></div>
+          <span class="card-tag">New</span>
+        </div>
+        <div class="card-body">
+          <h3>Night Blocks — 夜のブロック</h3>
+          <p>夜空をテーマにした落ちものパズル。ラインを消してレベルアップ。</p>
+          <div class="card-techs"><span>Puzzle</span><span>Classic</span></div>
+          <a href="night_blocks/index.html" class="card-btn"><span>&#9654;</span> プレイする</a>
+        </div>
+      </div>
+
+      <!-- Night Runner -->
+      <div class="game-card reveal">
+        <div class="card-visual" style="background:linear-gradient(135deg,#1a103a,#0f172a);display:flex;align-items:center;justify-content:center">
+          <div style="text-align:center"><span style="font-size:48px">🐱</span><br><span style="color:#fb923c;font-size:14px">Endless Runner</span></div>
+          <span class="card-tag">New</span>
+        </div>
+        <div class="card-body">
+          <h3>Night Runner — 夜を駆ける</h3>
+          <p>夜の屋根を飛び移る猫。音符を集めながらどこまでも走れ。</p>
+          <div class="card-techs"><span>Action</span><span>Runner</span></div>
+          <a href="night_runner/index.html" class="card-btn"><span>&#9654;</span> プレイする</a>
+        </div>
+      </div>
+
+      <!-- Babel Tower -->
+      <div class="game-card reveal">
+        <div class="card-visual" style="background:linear-gradient(135deg,#1a103a,#0f172a);display:flex;align-items:center;justify-content:center">
+          <div style="text-align:center"><span style="font-size:48px">🏗</span><br><span style="color:#fbbf24;font-size:14px">Tower Stack</span></div>
+          <span class="card-tag">New</span>
+        </div>
+        <div class="card-body">
+          <h3>Babel Tower — バベルの塔</h3>
+          <p>タイミングよくタップしてブロックを積み上げろ。ピッタリなら幅キープ。</p>
+          <div class="card-techs"><span>Timing</span><span>Casual</span></div>
+          <a href="babel_tower/index.html" class="card-btn"><span>&#9654;</span> プレイする</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- About -->
+<section id="about">
+  <div class="container">
+    <div class="reveal">
+      <div class="section-label">About</div>
+      <h2 class="section-title">NEKOMUSICAについて</h2>
+    </div>
+    <div class="about-grid reveal">
+      <div class="about-text">
+        <p>NEKOMUSICAは、<strong>ゲームディレクター kazu</strong> と <strong>AIプロデューサー ルナ</strong> が共同で運営するインディーゲームスタジオです。</p>
+        <p>プログラミングの壁をAIとの協業で突破し、<strong>アイデアとディレクションの力</strong>だけで面白いゲームを生み出す — そんな新しいゲーム制作のかたちに挑戦しています。</p>
+        <p>すべてのゲームは<strong>完全無料</strong>。課金要素は一切ありません。プレイヤーが純粋に楽しめることだけを追求します。</p>
+      </div>
+      <div class="about-stats">
+        <div class="stat-card">
+          <div class="num">10</div>
+          <div class="label">Games</div>
+        </div>
+        <div class="stat-card">
+          <div class="num">0</div>
+          <div class="label">課金要素</div>
+        </div>
+        <div class="stat-card">
+          <div class="num">AI</div>
+          <div class="label">Powered</div>
+        </div>
+        <div class="stat-card">
+          <div class="num">&infin;</div>
+          <div class="label">情熱</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Philosophy -->
+<section id="philosophy">
+  <div class="container">
+    <div class="reveal">
+      <div class="section-label">Philosophy</div>
+      <h2 class="section-title">大切にしていること</h2>
+    </div>
+    <div class="philosophy-grid">
+      <div class="phil-card reveal">
+        <div class="phil-icon">&#127925;</div>
+        <h3>Free to Play, Forever</h3>
+        <p>無課金がポリシー。すべてのプレイヤーに平等な体験を届けます。ガチャも広告もありません。</p>
+      </div>
+      <div class="phil-card reveal">
+        <div class="phil-icon">&#10024;</div>
+        <h3>Small but Memorable</h3>
+        <p>短くても心に残るゲーム体験を。ひとつひとつの作品に魂を込めて、丁寧に磨き上げます。</p>
+      </div>
+      <div class="phil-card reveal">
+        <div class="phil-icon">&#129302;</div>
+        <h3>Human + AI</h3>
+        <p>人間のアイデアとAIの技術力。新しいゲーム制作の可能性を証明します。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Footer -->
+<footer>
+  <div class="container">
+    <div class="logo-foot">NEKO<span class="accent">MUSICA</span></div>
+    <p>&copy; 2026 NEKOMUSICA. All rights reserved.</p>
+  </div>
+</footer>
+
+<script>
+// ── Generate stars ──
+(function() {
+  const container = document.getElementById('stars');
+  for (let i = 0; i < 60; i++) {
+    const s = document.createElement('span');
+    s.style.left = Math.random() * 100 + '%';
+    s.style.top = Math.random() * 100 + '%';
+    s.style.setProperty('--dur', (2 + Math.random() * 4) + 's');
+    s.style.animationDelay = Math.random() * 4 + 's';
+    s.style.width = s.style.height = (1 + Math.random() * 2) + 'px';
+    container.appendChild(s);
+  }
+})();
+
+// ── Scroll reveal ──
+const reveals = document.querySelectorAll('.reveal');
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach((e, i) => {
+    if (e.isIntersecting) {
+      setTimeout(() => e.target.classList.add('visible'), i * 100);
+      observer.unobserve(e.target);
+    }
+  });
+}, { threshold: 0.15 });
+reveals.forEach(el => observer.observe(el));
+
+// ── Mini preview canvas for Neko Catch card ──
+(function() {
+  const canvas = document.getElementById('preview-canvas');
+  const ctx = canvas.getContext('2d');
+  const W = 400, H = 220;
+  let frame = 0;
+
+  const noteTypes = [
+    { symbol: '\u266A', color: '#ff6b9d' },
+    { symbol: '\u266B', color: '#51e2f5' },
+    { symbol: '\u2669', color: '#ffd166' },
+  ];
+
+  const floatingNotes = [];
+  for (let i = 0; i < 8; i++) {
+    floatingNotes.push({
+      x: Math.random() * W,
+      y: Math.random() * H,
+      speed: 0.3 + Math.random() * 0.5,
+      type: noteTypes[i % 3],
+      phase: Math.random() * Math.PI * 2,
+    });
+  }
+
+  function drawCat(x, y) {
+    const b = Math.sin(frame * 0.06) * 2;
+    ctx.fillStyle = '#ffa94d';
+    ctx.beginPath();
+    ctx.ellipse(x, y + b, 25, 18, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Ears
+    ctx.beginPath();
+    ctx.moveTo(x - 18, y - 10 + b); ctx.lineTo(x - 10, y - 26 + b); ctx.lineTo(x - 4, y - 8 + b);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(x + 18, y - 10 + b); ctx.lineTo(x + 10, y - 26 + b); ctx.lineTo(x + 4, y - 8 + b);
+    ctx.fill();
+    // Eyes
+    ctx.fillStyle = '#2d3436';
+    ctx.beginPath(); ctx.ellipse(x - 8, y - 2 + b, 3, 4, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(x + 8, y - 2 + b, 3, 4, 0, 0, Math.PI * 2); ctx.fill();
+    // Nose
+    ctx.fillStyle = '#ff6b9d';
+    ctx.beginPath(); ctx.moveTo(x, y + 4 + b); ctx.lineTo(x - 2, y + 7 + b); ctx.lineTo(x + 2, y + 7 + b); ctx.fill();
+  }
+
+  function drawPreview() {
+    frame++;
+    const grad = ctx.createLinearGradient(0, 0, 0, H);
+    grad.addColorStop(0, '#0f0c29');
+    grad.addColorStop(1, '#1a1a3e');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+
+    // Stars
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    for (let i = 0; i < 20; i++) {
+      const sx = (i * 137.5 + frame * 0.03) % W;
+      const sy = (i * 97.3) % H;
+      ctx.beginPath();
+      ctx.arc(sx, sy, 0.8 + Math.sin(frame * 0.02 + i) * 0.4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Floating notes
+    ctx.textAlign = 'center';
+    ctx.font = '18px sans-serif';
+    for (const n of floatingNotes) {
+      n.y += n.speed;
+      if (n.y > H + 20) { n.y = -20; n.x = Math.random() * W; }
+      ctx.fillStyle = n.type.color;
+      ctx.globalAlpha = 0.7;
+      ctx.fillText(n.type.symbol, n.x + Math.sin(frame * 0.02 + n.phase) * 15, n.y);
+    }
+    ctx.globalAlpha = 1;
+
+    // Cat
+    const catX = W / 2 + Math.sin(frame * 0.025) * 60;
+    drawCat(catX, H - 40);
+
+    requestAnimationFrame(drawPreview);
+  }
+  drawPreview();
+})();
+
+// ── Mini preview canvas for Yorutabi card ──
+(function() {
+  const canvas = document.getElementById('yorutabi-canvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W = 400, H = 220;
+  let frame = 0;
+
+  const previewStars = [
+    { x: 80, y: 60 }, { x: 160, y: 40 }, { x: 240, y: 70 },
+    { x: 320, y: 50 }, { x: 120, y: 140 }, { x: 200, y: 120 },
+    { x: 280, y: 150 }, { x: 200, y: 190 },
+  ];
+  const previewLines = [[0,1],[1,2],[2,3],[0,4],[4,5],[5,6],[5,7]];
+  let drawnLines = 0;
+
+  function drawYorutabi() {
+    frame++;
+    const grad = ctx.createLinearGradient(0, 0, 0, H);
+    grad.addColorStop(0, '#0a0818');
+    grad.addColorStop(1, '#1a1535');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+
+    // Bg stars
+    ctx.fillStyle = 'rgba(255,255,255,0.4)';
+    for (let i = 0; i < 25; i++) {
+      const sx = (i * 137.5 + frame * 0.02) % W;
+      const sy = (i * 67.3) % H;
+      ctx.beginPath();
+      ctx.arc(sx, sy, 0.6 + Math.sin(frame * 0.02 + i) * 0.3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Animate lines appearing
+    const showLines = Math.min(previewLines.length, Math.floor(frame / 40));
+    if (frame % (40 * previewLines.length + 120) < 40 * previewLines.length) {
+      drawnLines = showLines;
+    } else {
+      drawnLines = previewLines.length;
+    }
+
+    // Lines
+    for (let i = 0; i < drawnLines; i++) {
+      const l = previewLines[i];
+      const a = previewStars[l[0]];
+      const b = previewStars[l[1]];
+      ctx.strokeStyle = 'rgba(138, 92, 246, 0.3)';
+      ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+      ctx.strokeStyle = 'rgba(167, 139, 250, 0.7)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+    }
+
+    // Stars
+    previewStars.forEach((s, i) => {
+      const connected = drawnLines > 0 && previewLines.slice(0, drawnLines).some(l => l[0] === i || l[1] === i);
+      const pulse = Math.sin(frame * 0.04 + i) * 2;
+      ctx.fillStyle = connected ? '#a78bfa' : 'rgba(255,255,255,0.5)';
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, (connected ? 6 : 4) + pulse * 0.3, 0, Math.PI * 2);
+      ctx.fill();
+      if (connected) {
+        ctx.fillStyle = '#e0d4ff';
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    });
+
+    requestAnimationFrame(drawYorutabi);
+  }
+  drawYorutabi();
+})();
+</script>
+
+</body>
+</html>

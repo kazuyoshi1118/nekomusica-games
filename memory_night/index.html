@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Memory Night — 記憶の夜 | NEKOMUSICA</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#08060f;display:flex;justify-content:center;align-items:center;height:100vh;overflow:hidden;font-family:'Segoe UI',sans-serif;touch-action:none;user-select:none}
+canvas{border-radius:12px;box-shadow:0 0 50px rgba(138,92,246,0.3)}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<script>
+const canvas=document.getElementById('game'),ctx=canvas.getContext('2d');
+const MAX_W=400,MAX_H=700;
+let scale=1;
+function resize(){scale=Math.min(window.innerWidth/MAX_W,window.innerHeight/MAX_H,1);canvas.width=MAX_W*scale;canvas.height=MAX_H*scale;ctx.setTransform(scale,0,0,scale,0,0)}
+resize();window.addEventListener('resize',resize);
+
+let audioCtx=null;
+function initAudio(){if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)()}
+const TONES=[261.6,293.7,329.6,349.2,392.0,440.0,493.9,523.3];
+function playTone(i,dur=0.3){if(!audioCtx)return;const o=audioCtx.createOscillator(),g=audioCtx.createGain();o.type='sine';o.frequency.value=TONES[i%TONES.length];g.gain.setValueAtTime(0.1,audioCtx.currentTime);g.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+dur);o.connect(g);g.connect(audioCtx.destination);o.start();o.stop(audioCtx.currentTime+dur)}
+function playMatch(){if(!audioCtx)return;[0,2,4].forEach((n,i)=>setTimeout(()=>playTone(n,0.4),i*100))}
+function playComplete(){if(!audioCtx)return;[0,2,4,5,7].forEach((n,i)=>setTimeout(()=>playTone(n,0.5),i*120))}
+
+const SYMBOLS=['♪','♫','☽','★','◆','▲','●','♠','♥','◇','△','■'];
+const COLORS=['#8a5cf6','#f472b6','#fbbf24','#22d3ee','#a78bfa','#4ade80','#fb923c','#e879f9','#ff6b9d','#60a5fa','#34d399','#f87171'];
+const STATE={TITLE:0,PLAY:1,COMPLETE:2};
+let state=STATE.TITLE,frame=0;
+let cards=[],flipped=[],matched=[],moves=0,pairs=0,totalPairs=0,level=1,timer=0,bestTime=Infinity;
+let particles=[];
+let lockInput=false;
+
+function initLevel(lv){
+  level=lv;
+  const cols=lv===1?4:lv===2?4:5;
+  const rows=lv===1?4:5:6;
+  totalPairs=cols*rows/2;
+  const syms=SYMBOLS.slice(0,totalPairs);
+  const deck=[...syms,...syms];
+  // Shuffle
+  for(let i=deck.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[deck[i],deck[j]]=[deck[j],deck[i]]}
+  const cardW=(MAX_W-40-(cols-1)*10)/cols;
+  const cardH=cardW*1.2;
+  const startY=(MAX_H-rows*(cardH+10))/2+30;
+  cards=[];
+  for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){
+    const idx=r*cols+c;
+    const symIdx=syms.indexOf(deck[idx]);
+    cards.push({x:20+c*(cardW+10),y:startY+r*(cardH+10),w:cardW,h:cardH,symbol:deck[idx],color:COLORS[symIdx],faceUp:false,matched:false,flipAnim:0})
+  }
+  flipped=[];matched=[];moves=0;pairs=0;timer=0;lockInput=false;particles=[];
+}
+
+function startGame(){initAudio();state=STATE.PLAY;initLevel(1)}
+
+function addP(x,y,c,n){for(let i=0;i<n;i++){const a=Math.random()*Math.PI*2,s=1+Math.random()*3;particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:1,color:c,size:2+Math.random()*3})}}
+
+function getPos(e){const r=canvas.getBoundingClientRect(),t=e.touches?e.touches[0]:e;return{x:(t.clientX-r.left)/scale,y:(t.clientY-r.top)/scale}}
+
+canvas.addEventListener('touchstart',e=>{e.preventDefault();const p=getPos(e);handleClick(p)},{passive:false});
+canvas.addEventListener('click',e=>handleClick(getPos(e)));
+
+function handleClick(p){
+  if(state===STATE.TITLE){startGame();return}
+  if(state===STATE.COMPLETE){state=STATE.TITLE;return}
+  if(lockInput)return;
+  for(let i=0;i<cards.length;i++){
+    const c=cards[i];
+    if(p.x>=c.x&&p.x<=c.x+c.w&&p.y>=c.y&&p.y<=c.y+c.h&&!c.faceUp&&!c.matched){
+      c.faceUp=true;c.flipAnim=1;flipped.push(i);playTone(SYMBOLS.indexOf(c.symbol));
+      if(flipped.length===2){
+        moves++;lockInput=true;
+        const a=cards[flipped[0]],b=cards[flipped[1]];
+        if(a.symbol===b.symbol){
+          setTimeout(()=>{a.matched=true;b.matched=true;pairs++;addP(a.x+a.w/2,a.y+a.h/2,a.color,12);addP(b.x+b.w/2,b.y+b.h/2,b.color,12);playMatch();flipped=[];lockInput=false;
+            if(pairs===totalPairs){
+              if(level<3){setTimeout(()=>{initLevel(level+1)},1000)}
+              else{playComplete();state=STATE.COMPLETE}
+            }
+          },400);
+        }else{
+          setTimeout(()=>{a.faceUp=false;b.faceUp=false;flipped=[];lockInput=false},800);
+        }
+      }
+      break;
+    }
+  }
+}
+
+function update(){
+  frame++;
+  if(state===STATE.PLAY)timer+=1/60;
+  for(let i=particles.length-1;i>=0;i--){const p=particles[i];p.x+=p.vx;p.y+=p.vy;p.vy+=0.08;p.life-=0.02;if(p.life<=0)particles.splice(i,1)}
+  for(const c of cards)if(c.flipAnim>0)c.flipAnim=Math.max(0,c.flipAnim-0.08);
+}
+
+function drawBg(){const g=ctx.createLinearGradient(0,0,0,MAX_H);g.addColorStop(0,'#08060f');g.addColorStop(1,'#1a1535');ctx.fillStyle=g;ctx.fillRect(0,0,MAX_W,MAX_H);
+  for(let i=0;i<40;i++){ctx.fillStyle=`rgba(255,255,255,${0.2+Math.sin(frame*0.012+i)*0.2})`;ctx.beginPath();ctx.arc((i*137.5)%MAX_W,(i*97.3)%MAX_H,0.8,0,Math.PI*2);ctx.fill()}}
+
+function drawCards(){
+  for(const c of cards){
+    if(c.matched){
+      ctx.globalAlpha=0.2;ctx.fillStyle=c.color;
+      ctx.beginPath();ctx.roundRect(c.x,c.y,c.w,c.h,8);ctx.fill();
+      ctx.globalAlpha=1;continue;
+    }
+    const flip=c.flipAnim;
+    const scaleX=c.faceUp?1-flip:flip;
+    ctx.save();
+    ctx.translate(c.x+c.w/2,c.y+c.h/2);
+    ctx.scale(Math.max(0.01,Math.abs(1-flip*2)),1);
+    ctx.translate(-(c.w/2),-(c.h/2));
+    if(c.faceUp){
+      ctx.fillStyle='#1a1535';ctx.beginPath();ctx.roundRect(0,0,c.w,c.h,8);ctx.fill();
+      ctx.strokeStyle=c.color;ctx.lineWidth=2;ctx.beginPath();ctx.roundRect(0,0,c.w,c.h,8);ctx.stroke();
+      ctx.fillStyle=c.color;ctx.textAlign='center';ctx.textBaseline='middle';ctx.font=`${c.w*0.45}px sans-serif`;ctx.fillText(c.symbol,c.w/2,c.h/2);
+    }else{
+      ctx.fillStyle='#1e1a3a';ctx.beginPath();ctx.roundRect(0,0,c.w,c.h,8);ctx.fill();
+      ctx.strokeStyle='rgba(138,92,246,0.3)';ctx.lineWidth=1;ctx.beginPath();ctx.roundRect(0,0,c.w,c.h,8);ctx.stroke();
+      ctx.fillStyle='rgba(138,92,246,0.2)';ctx.textAlign='center';ctx.textBaseline='middle';ctx.font=`${c.w*0.3}px sans-serif`;ctx.fillText('?',c.w/2,c.h/2);
+    }
+    ctx.restore();
+  }
+}
+
+function drawHUD(){
+  ctx.textAlign='left';ctx.fillStyle='#fff';ctx.font='bold 14px sans-serif';ctx.fillText(`Moves: ${moves}`,15,30);
+  ctx.textAlign='center';ctx.fillStyle='#a78bfa';ctx.font='14px sans-serif';ctx.fillText(`Level ${level}/3`,MAX_W/2,30);
+  ctx.textAlign='right';ctx.fillStyle='#fbbf24';ctx.font='14px sans-serif';ctx.fillText(`${pairs}/${totalPairs}`,MAX_W-15,30);
+}
+
+function drawParticles(){for(const p of particles){ctx.globalAlpha=p.life;ctx.fillStyle=p.color;ctx.beginPath();ctx.arc(p.x,p.y,p.size*p.life,0,Math.PI*2);ctx.fill()}ctx.globalAlpha=1}
+
+function drawTitle(){drawBg();ctx.textAlign='center';
+  ctx.shadowColor='#8a5cf6';ctx.shadowBlur=30;ctx.fillStyle='#fff';ctx.font='bold 38px sans-serif';ctx.fillText('Memory Night',MAX_W/2,240);ctx.shadowBlur=0;
+  ctx.fillStyle='#a78bfa';ctx.font='18px sans-serif';ctx.fillText('— 記憶の夜 —',MAX_W/2,275);
+  ctx.fillStyle='#9790a8';ctx.font='14px sans-serif';ctx.fillText('カードをめくってペアを見つけよう',MAX_W/2,320);
+  const syms=['♪','☽','★','◆'];
+  syms.forEach((s,i)=>{ctx.fillStyle=COLORS[i];ctx.globalAlpha=0.5+Math.sin(frame*0.04+i)*0.3;ctx.font='32px sans-serif';ctx.fillText(s,130+i*55,400)});
+  ctx.globalAlpha=1;
+  const a=0.4+Math.sin(frame*0.05)*0.4;ctx.fillStyle=`rgba(255,255,255,${a})`;ctx.font='16px sans-serif';ctx.fillText('Tap to Start',MAX_W/2,520);
+  ctx.fillStyle='#4a4560';ctx.font='11px sans-serif';ctx.fillText('NEKOMUSICA',MAX_W/2,MAX_H-30)}
+
+function drawComplete(){drawBg();ctx.textAlign='center';
+  ctx.shadowColor='#fbbf24';ctx.shadowBlur=25;ctx.fillStyle='#fbbf24';ctx.font='bold 32px sans-serif';ctx.fillText('All Clear!',MAX_W/2,240);ctx.shadowBlur=0;
+  ctx.fillStyle='#fff';ctx.font='22px sans-serif';ctx.fillText(`${moves} Moves`,MAX_W/2,300);
+  ctx.fillStyle='#a78bfa';ctx.font='16px sans-serif';ctx.fillText('すべてのペアを見つけた！',MAX_W/2,350);
+  const a=0.4+Math.sin(frame*0.05)*0.4;ctx.fillStyle=`rgba(255,255,255,${a})`;ctx.font='16px sans-serif';ctx.fillText('Tap to Continue',MAX_W/2,460);
+  ctx.fillStyle='#4a4560';ctx.font='11px sans-serif';ctx.fillText('NEKOMUSICA',MAX_W/2,MAX_H-30)}
+
+function loop(){update();
+  if(state===STATE.TITLE)drawTitle();
+  else if(state===STATE.PLAY){drawBg();drawCards();drawParticles();drawHUD()}
+  else drawComplete();
+  requestAnimationFrame(loop)}
+loop();
+</script>
+</body>
+</html>

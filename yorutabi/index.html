@@ -1,0 +1,708 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Yorutabi — 夜旅 | NEKOMUSICA</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #08060f;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  overflow: hidden;
+  font-family: 'Segoe UI', sans-serif;
+  touch-action: none;
+  user-select: none;
+}
+canvas {
+  border-radius: 12px;
+  box-shadow: 0 0 50px rgba(138, 92, 246, 0.3);
+}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+
+const MAX_W = 400;
+const MAX_H = 700;
+let scale = 1;
+
+function resize() {
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  scale = Math.min(w / MAX_W, h / MAX_H, 1);
+  canvas.width = MAX_W * scale;
+  canvas.height = MAX_H * scale;
+  ctx.setTransform(scale, 0, 0, scale, 0, 0);
+}
+resize();
+window.addEventListener('resize', resize);
+
+// Audio
+let audioCtx = null;
+function initAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+}
+
+// Pentatonic scale notes for pleasant sounds
+const SCALE = [261.6, 293.7, 329.6, 392.0, 440.0, 523.3, 587.3, 659.3, 784.0, 880.0];
+
+function playNote(index, duration = 0.4) {
+  if (!audioCtx) return;
+  const freq = SCALE[index % SCALE.length];
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'sine';
+  osc.frequency.value = freq;
+  gain.gain.setValueAtTime(0.12, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + duration);
+}
+
+function playChord(indices) {
+  indices.forEach((idx, i) => {
+    setTimeout(() => playNote(idx, 0.8), i * 80);
+  });
+}
+
+function playCompleteSound() {
+  playChord([0, 2, 4, 7, 9]);
+}
+
+// Game states
+const STATE = { TITLE: 0, PLAYING: 1, COMPLETE: 2, TRANSITION: 3 };
+let state = STATE.TITLE;
+let frame = 0;
+
+// Constellation data - each level is a constellation
+const CONSTELLATIONS = [
+  {
+    name: 'ことね',
+    nameEn: 'Kotone',
+    subtitle: '東京の夜空',
+    stars: [
+      { x: 200, y: 200 },
+      { x: 140, y: 280 },
+      { x: 260, y: 280 },
+      { x: 120, y: 400 },
+      { x: 280, y: 400 },
+    ],
+    lines: [[0,1],[0,2],[1,3],[2,4]],
+    bg: { top: '#0a0818', mid: '#12102a', bot: '#1a1535' },
+  },
+  {
+    name: 'サハラの弓',
+    nameEn: 'Sahara Bow',
+    subtitle: '砂漠の夜空',
+    stars: [
+      { x: 100, y: 180 },
+      { x: 160, y: 260 },
+      { x: 200, y: 340 },
+      { x: 240, y: 420 },
+      { x: 300, y: 340 },
+      { x: 300, y: 240 },
+    ],
+    lines: [[0,1],[1,2],[2,3],[2,4],[4,5]],
+    bg: { top: '#0f0a08', mid: '#1a1210', bot: '#241a12' },
+  },
+  {
+    name: 'ケルトの竪琴',
+    nameEn: 'Celtic Harp',
+    subtitle: 'アイルランドの夜空',
+    stars: [
+      { x: 200, y: 150 },
+      { x: 150, y: 230 },
+      { x: 250, y: 230 },
+      { x: 130, y: 330 },
+      { x: 200, y: 310 },
+      { x: 270, y: 330 },
+      { x: 200, y: 430 },
+    ],
+    lines: [[0,1],[0,2],[1,3],[1,4],[2,4],[2,5],[3,6],[5,6]],
+    bg: { top: '#060f08', mid: '#0e1a12', bot: '#14241a' },
+  },
+  {
+    name: 'アンデスの翼',
+    nameEn: 'Andean Wings',
+    subtitle: 'マチュピチュの夜空',
+    stars: [
+      { x: 200, y: 180 },
+      { x: 130, y: 250 },
+      { x: 270, y: 250 },
+      { x: 80, y: 330 },
+      { x: 160, y: 350 },
+      { x: 240, y: 350 },
+      { x: 320, y: 330 },
+      { x: 200, y: 450 },
+    ],
+    lines: [[0,1],[0,2],[1,3],[1,4],[2,5],[2,6],[4,7],[5,7]],
+    bg: { top: '#0a0610', mid: '#14102a', bot: '#1e1838' },
+  },
+  {
+    name: '月猫',
+    nameEn: 'Moon Cat',
+    subtitle: 'NEKOMUSICAの夜空',
+    stars: [
+      { x: 170, y: 160 },
+      { x: 230, y: 160 },
+      { x: 140, y: 120 },
+      { x: 260, y: 120 },
+      { x: 150, y: 220 },
+      { x: 250, y: 220 },
+      { x: 200, y: 260 },
+      { x: 130, y: 330 },
+      { x: 270, y: 330 },
+      { x: 200, y: 420 },
+    ],
+    lines: [[0,1],[0,2],[1,3],[0,4],[1,5],[4,5],[4,6],[5,6],[4,7],[5,8],[7,9],[8,9]],
+    bg: { top: '#0f0820', mid: '#18103a', bot: '#201848' },
+  },
+];
+
+let currentLevel = 0;
+let stars = [];
+let connectedLines = [];
+let selectedStar = -1;
+let touchPos = null;
+let bgStars = [];
+let shootingStars = [];
+let particles = [];
+let transitionTimer = 0;
+let totalScore = 0;
+let levelScore = 0;
+let moveCount = 0;
+let hintTimer = 0;
+
+// Generate background stars
+function genBgStars() {
+  bgStars = [];
+  for (let i = 0; i < 80; i++) {
+    bgStars.push({
+      x: Math.random() * MAX_W,
+      y: Math.random() * MAX_H,
+      size: 0.5 + Math.random() * 1.5,
+      twinkleSpeed: 0.01 + Math.random() * 0.03,
+      phase: Math.random() * Math.PI * 2,
+    });
+  }
+}
+genBgStars();
+
+function spawnShootingStar() {
+  if (Math.random() < 0.005) {
+    shootingStars.push({
+      x: Math.random() * MAX_W,
+      y: Math.random() * MAX_H * 0.3,
+      vx: 3 + Math.random() * 4,
+      vy: 1 + Math.random() * 2,
+      life: 1,
+      length: 30 + Math.random() * 40,
+    });
+  }
+}
+
+function addParticles(x, y, color, count) {
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 1 + Math.random() * 3;
+    particles.push({
+      x, y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      life: 1,
+      color,
+      size: 2 + Math.random() * 3,
+    });
+  }
+}
+
+function initLevel() {
+  const c = CONSTELLATIONS[currentLevel];
+  stars = c.stars.map((s, i) => ({
+    x: s.x,
+    y: s.y,
+    radius: 16,
+    found: false,
+    pulsePhase: Math.random() * Math.PI * 2,
+    index: i,
+  }));
+  connectedLines = [];
+  selectedStar = -1;
+  moveCount = 0;
+  levelScore = 0;
+  hintTimer = 0;
+  genBgStars();
+}
+
+function getRequiredLines() {
+  return CONSTELLATIONS[currentLevel].lines;
+}
+
+function isLineConnected(a, b) {
+  return connectedLines.some(l =>
+    (l[0] === a && l[1] === b) || (l[0] === b && l[1] === a)
+  );
+}
+
+function isValidConnection(a, b) {
+  const required = getRequiredLines();
+  return required.some(l =>
+    (l[0] === a && l[1] === b) || (l[0] === b && l[1] === a)
+  );
+}
+
+function isComplete() {
+  const required = getRequiredLines();
+  return required.every(l => isLineConnected(l[0], l[1]));
+}
+
+function distToStar(x, y, star) {
+  const dx = x - star.x;
+  const dy = y - star.y;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+function findNearestStar(x, y) {
+  let minDist = 50;
+  let nearest = -1;
+  stars.forEach((s, i) => {
+    const d = distToStar(x, y, s);
+    if (d < minDist) { minDist = d; nearest = i; }
+  });
+  return nearest;
+}
+
+// Input
+function getPos(e) {
+  const rect = canvas.getBoundingClientRect();
+  const touch = e.touches ? e.touches[0] : e;
+  return {
+    x: (touch.clientX - rect.left) / scale,
+    y: (touch.clientY - rect.top) / scale,
+  };
+}
+
+canvas.addEventListener('mousedown', (e) => onDown(getPos(e)));
+canvas.addEventListener('mousemove', (e) => onMove(getPos(e)));
+canvas.addEventListener('mouseup', (e) => onUp(getPos(e)));
+canvas.addEventListener('touchstart', (e) => { e.preventDefault(); onDown(getPos(e)); }, { passive: false });
+canvas.addEventListener('touchmove', (e) => { e.preventDefault(); onMove(getPos(e)); }, { passive: false });
+canvas.addEventListener('touchend', (e) => { e.preventDefault(); onUp(touchPos || { x: 0, y: 0 }); }, { passive: false });
+
+function onDown(pos) {
+  if (state === STATE.TITLE) {
+    initAudio();
+    state = STATE.PLAYING;
+    currentLevel = 0;
+    totalScore = 0;
+    initLevel();
+    return;
+  }
+  if (state === STATE.COMPLETE) {
+    state = STATE.TITLE;
+    return;
+  }
+  if (state === STATE.TRANSITION) return;
+  if (state === STATE.PLAYING) {
+    const idx = findNearestStar(pos.x, pos.y);
+    if (idx >= 0) {
+      selectedStar = idx;
+      touchPos = pos;
+      stars[idx].found = true;
+      playNote(idx);
+    }
+  }
+}
+
+function onMove(pos) {
+  touchPos = pos;
+  if (state === STATE.PLAYING && selectedStar >= 0) {
+    const idx = findNearestStar(pos.x, pos.y);
+    if (idx >= 0 && idx !== selectedStar && !isLineConnected(selectedStar, idx)) {
+      if (isValidConnection(selectedStar, idx)) {
+        connectedLines.push([selectedStar, idx]);
+        stars[idx].found = true;
+        moveCount++;
+        levelScore += 100;
+        addParticles(stars[idx].x, stars[idx].y, '#8a5cf6', 10);
+        playNote(idx);
+
+        if (isComplete()) {
+          const bonus = Math.max(0, 500 - moveCount * 30);
+          levelScore += bonus;
+          totalScore += levelScore;
+          playCompleteSound();
+
+          // Big particle burst
+          stars.forEach(s => addParticles(s.x, s.y, '#fbbf24', 15));
+
+          if (currentLevel < CONSTELLATIONS.length - 1) {
+            state = STATE.TRANSITION;
+            transitionTimer = 0;
+          } else {
+            state = STATE.COMPLETE;
+          }
+        }
+        selectedStar = idx;
+      }
+    }
+  }
+}
+
+function onUp(pos) {
+  selectedStar = -1;
+  touchPos = null;
+}
+
+// Drawing
+function drawBg() {
+  const c = state === STATE.TITLE ?
+    { top: '#08060f', mid: '#110e1d', bot: '#1a1535' } :
+    CONSTELLATIONS[currentLevel].bg;
+
+  const grad = ctx.createLinearGradient(0, 0, 0, MAX_H);
+  grad.addColorStop(0, c.top);
+  grad.addColorStop(0.5, c.mid);
+  grad.addColorStop(1, c.bot);
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, MAX_W, MAX_H);
+
+  // Background stars
+  bgStars.forEach(s => {
+    const alpha = 0.3 + Math.sin(frame * s.twinkleSpeed + s.phase) * 0.3;
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.size, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.globalAlpha = 1;
+
+  // Shooting stars
+  shootingStars.forEach(s => {
+    ctx.globalAlpha = s.life * 0.7;
+    const grad = ctx.createLinearGradient(
+      s.x, s.y, s.x - s.vx * s.length / 5, s.y - s.vy * s.length / 5
+    );
+    grad.addColorStop(0, '#fff');
+    grad.addColorStop(1, 'transparent');
+    ctx.strokeStyle = grad;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(s.x, s.y);
+    ctx.lineTo(s.x - s.vx * s.length / 5, s.y - s.vy * s.length / 5);
+    ctx.stroke();
+  });
+  ctx.globalAlpha = 1;
+}
+
+function drawConstellationLines() {
+  // Draw connected lines with glow
+  connectedLines.forEach(l => {
+    const a = stars[l[0]];
+    const b = stars[l[1]];
+    // Glow
+    ctx.strokeStyle = 'rgba(138, 92, 246, 0.3)';
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+    // Line
+    ctx.strokeStyle = 'rgba(167, 139, 250, 0.8)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+  });
+
+  // Draw active drag line
+  if (selectedStar >= 0 && touchPos) {
+    const s = stars[selectedStar];
+    ctx.strokeStyle = 'rgba(138, 92, 246, 0.4)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 5]);
+    ctx.beginPath();
+    ctx.moveTo(s.x, s.y);
+    ctx.lineTo(touchPos.x, touchPos.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+}
+
+function drawStars() {
+  stars.forEach((s, i) => {
+    const pulse = Math.sin(frame * 0.04 + s.pulsePhase) * 0.3;
+
+    // Outer glow
+    if (s.found) {
+      ctx.shadowColor = '#8a5cf6';
+      ctx.shadowBlur = 20;
+    }
+
+    // Star circle
+    const radius = s.radius * (1 + (s.found ? pulse * 0.2 : pulse * 0.1));
+    ctx.fillStyle = s.found ? '#a78bfa' : 'rgba(255,255,255,0.6)';
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, radius, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Inner bright spot
+    ctx.fillStyle = s.found ? '#e0d4ff' : 'rgba(255,255,255,0.9)';
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, radius * 0.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.shadowBlur = 0;
+
+    // Hint: show faint lines after 5 seconds of no progress
+    if (hintTimer > 300 && !s.found) {
+      ctx.globalAlpha = 0.15 + Math.sin(frame * 0.03) * 0.1;
+      ctx.fillStyle = '#fbbf24';
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, radius + 8, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+  });
+}
+
+function drawParticles() {
+  particles.forEach(p => {
+    ctx.globalAlpha = p.life;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.globalAlpha = 1;
+}
+
+function drawHUD() {
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 16px sans-serif';
+  const c = CONSTELLATIONS[currentLevel];
+  ctx.fillText(c.name, 20, 35);
+  ctx.fillStyle = '#9790a8';
+  ctx.font = '12px sans-serif';
+  ctx.fillText(c.subtitle, 20, 55);
+
+  ctx.textAlign = 'right';
+  ctx.fillStyle = '#fbbf24';
+  ctx.font = 'bold 16px sans-serif';
+  ctx.fillText(`${connectedLines.length}/${getRequiredLines().length}`, MAX_W - 20, 35);
+
+  ctx.fillStyle = '#9790a8';
+  ctx.font = '12px sans-serif';
+  ctx.fillText(`Level ${currentLevel + 1}/${CONSTELLATIONS.length}`, MAX_W - 20, 55);
+
+  // Total score
+  ctx.textAlign = 'center';
+  ctx.fillStyle = 'rgba(255,255,255,0.3)';
+  ctx.font = '12px sans-serif';
+  ctx.fillText(`Score: ${totalScore + levelScore}`, MAX_W / 2, MAX_H - 20);
+}
+
+function drawTitle() {
+  drawBg();
+
+  ctx.textAlign = 'center';
+
+  // Logo
+  ctx.shadowColor = '#8a5cf6';
+  ctx.shadowBlur = 30;
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 42px sans-serif';
+  ctx.fillText('Yorutabi', MAX_W / 2, 220);
+  ctx.shadowBlur = 0;
+
+  ctx.fillStyle = '#a78bfa';
+  ctx.font = '18px sans-serif';
+  ctx.fillText('— 夜旅 —', MAX_W / 2, 255);
+
+  ctx.fillStyle = '#9790a8';
+  ctx.font = '14px sans-serif';
+  ctx.fillText('星を繋いで星座を描こう', MAX_W / 2, 300);
+
+  // Preview constellation
+  ctx.globalAlpha = 0.15;
+  const preview = CONSTELLATIONS[0];
+  preview.lines.forEach(l => {
+    const a = preview.stars[l[0]];
+    const b = preview.stars[l[1]];
+    ctx.strokeStyle = '#8a5cf6';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y + 120);
+    ctx.lineTo(b.x, b.y + 120);
+    ctx.stroke();
+  });
+  preview.stars.forEach(s => {
+    ctx.fillStyle = '#a78bfa';
+    ctx.beginPath();
+    ctx.arc(s.x, s.y + 120, 5, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.globalAlpha = 1;
+
+  // Start prompt
+  const alpha = 0.4 + Math.sin(frame * 0.05) * 0.4;
+  ctx.fillStyle = `rgba(255,255,255,${alpha})`;
+  ctx.font = '16px sans-serif';
+  ctx.fillText('Tap to Start', MAX_W / 2, 560);
+
+  // Credit
+  ctx.fillStyle = '#4a4560';
+  ctx.font = '11px sans-serif';
+  ctx.fillText('NEKOMUSICA', MAX_W / 2, MAX_H - 30);
+}
+
+function drawTransition() {
+  const c = CONSTELLATIONS[currentLevel];
+  ctx.textAlign = 'center';
+
+  // Constellation name reveal
+  const alpha = Math.min(1, transitionTimer / 60);
+  ctx.globalAlpha = alpha;
+
+  ctx.shadowColor = '#fbbf24';
+  ctx.shadowBlur = 20;
+  ctx.fillStyle = '#fbbf24';
+  ctx.font = 'bold 28px sans-serif';
+  ctx.fillText(c.name, MAX_W / 2, MAX_H / 2 - 30);
+  ctx.shadowBlur = 0;
+
+  ctx.fillStyle = '#a78bfa';
+  ctx.font = '16px sans-serif';
+  ctx.fillText(c.nameEn, MAX_W / 2, MAX_H / 2 + 5);
+
+  ctx.fillStyle = '#9790a8';
+  ctx.font = '14px sans-serif';
+  ctx.fillText(`+${levelScore} pts`, MAX_W / 2, MAX_H / 2 + 40);
+
+  ctx.globalAlpha = 1;
+}
+
+function drawComplete() {
+  drawBg();
+
+  ctx.textAlign = 'center';
+
+  ctx.shadowColor = '#fbbf24';
+  ctx.shadowBlur = 25;
+  ctx.fillStyle = '#fbbf24';
+  ctx.font = 'bold 36px sans-serif';
+  ctx.fillText('Journey Complete', MAX_W / 2, 200);
+  ctx.shadowBlur = 0;
+
+  ctx.fillStyle = '#a78bfa';
+  ctx.font = '18px sans-serif';
+  ctx.fillText('すべての星座を描いた', MAX_W / 2, 240);
+
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 48px sans-serif';
+  ctx.fillText(`${totalScore}`, MAX_W / 2, 320);
+  ctx.fillStyle = '#9790a8';
+  ctx.font = '14px sans-serif';
+  ctx.fillText('Total Score', MAX_W / 2, 345);
+
+  // List all constellations
+  CONSTELLATIONS.forEach((c, i) => {
+    ctx.fillStyle = '#a78bfa';
+    ctx.font = '14px sans-serif';
+    ctx.fillText(`★ ${c.name} — ${c.subtitle}`, MAX_W / 2, 400 + i * 28);
+  });
+
+  const alpha = 0.4 + Math.sin(frame * 0.05) * 0.4;
+  ctx.fillStyle = `rgba(255,255,255,${alpha})`;
+  ctx.font = '16px sans-serif';
+  ctx.fillText('Tap to Return', MAX_W / 2, MAX_H - 60);
+
+  ctx.fillStyle = '#4a4560';
+  ctx.font = '11px sans-serif';
+  ctx.fillText('NEKOMUSICA', MAX_W / 2, MAX_H - 30);
+}
+
+// Main loop
+function update() {
+  frame++;
+  spawnShootingStar();
+
+  // Update shooting stars
+  for (let i = shootingStars.length - 1; i >= 0; i--) {
+    const s = shootingStars[i];
+    s.x += s.vx;
+    s.y += s.vy;
+    s.life -= 0.015;
+    if (s.life <= 0) shootingStars.splice(i, 1);
+  }
+
+  // Update particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vy += 0.05;
+    p.vx *= 0.98;
+    p.life -= 0.02;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+
+  // Hint timer
+  if (state === STATE.PLAYING) {
+    hintTimer++;
+  }
+
+  // Transition
+  if (state === STATE.TRANSITION) {
+    transitionTimer++;
+    if (transitionTimer > 150) {
+      currentLevel++;
+      initLevel();
+      state = STATE.PLAYING;
+    }
+  }
+}
+
+function draw() {
+  if (state === STATE.TITLE) {
+    drawTitle();
+  } else if (state === STATE.PLAYING) {
+    drawBg();
+    drawConstellationLines();
+    drawStars();
+    drawParticles();
+    drawHUD();
+  } else if (state === STATE.TRANSITION) {
+    drawBg();
+    drawConstellationLines();
+    drawStars();
+    drawParticles();
+    drawTransition();
+  } else if (state === STATE.COMPLETE) {
+    drawComplete();
+    drawParticles();
+  }
+}
+
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+loop();
+</script>
+</body>
+</html>

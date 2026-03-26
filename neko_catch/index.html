@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Neko Catch! - NEKOMUSICA</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #1a1a2e;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  overflow: hidden;
+  font-family: 'Segoe UI', sans-serif;
+  touch-action: none;
+  user-select: none;
+}
+canvas {
+  border-radius: 12px;
+  box-shadow: 0 0 40px rgba(138, 92, 246, 0.4);
+}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+
+// Responsive sizing
+const MAX_W = 400;
+const MAX_H = 600;
+let scale = 1;
+
+function resize() {
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  scale = Math.min(w / MAX_W, h / MAX_H, 1);
+  canvas.width = MAX_W * scale;
+  canvas.height = MAX_H * scale;
+  ctx.setTransform(scale, 0, 0, scale, 0, 0);
+}
+resize();
+window.addEventListener('resize', resize);
+
+// Game state
+const STATE = { TITLE: 0, PLAYING: 1, GAMEOVER: 2 };
+let state = STATE.TITLE;
+let score = 0;
+let highScore = parseInt(localStorage.getItem('nekoCatchHigh') || '0');
+let lives = 3;
+let combo = 0;
+let maxCombo = 0;
+let catX = MAX_W / 2;
+let targetX = MAX_W / 2;
+let notes = [];
+let particles = [];
+let sparkles = [];
+let frame = 0;
+let difficulty = 1;
+let gameOverTimer = 0;
+
+// Note types
+const NOTE_TYPES = [
+  { symbol: '\u266A', color: '#ff6b9d', points: 10 },
+  { symbol: '\u266B', color: '#51e2f5', points: 10 },
+  { symbol: '\u2669', color: '#ffd166', points: 10 },
+  { symbol: '\u2605', color: '#ff9ff3', points: 25 },
+];
+
+// Cat properties
+const CAT_W = 60;
+const CAT_H = 50;
+
+// Input handling
+let inputX = null;
+
+canvas.addEventListener('mousemove', (e) => {
+  const rect = canvas.getBoundingClientRect();
+  inputX = (e.clientX - rect.left) / scale;
+});
+
+canvas.addEventListener('touchmove', (e) => {
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  inputX = (e.touches[0].clientX - rect.left) / scale;
+}, { passive: false });
+
+canvas.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  inputX = (e.touches[0].clientX - rect.left) / scale;
+  if (state === STATE.TITLE) startGame();
+  else if (state === STATE.GAMEOVER && gameOverTimer > 60) { state = STATE.TITLE; }
+}, { passive: false });
+
+canvas.addEventListener('click', () => {
+  if (state === STATE.TITLE) startGame();
+  else if (state === STATE.GAMEOVER && gameOverTimer > 60) { state = STATE.TITLE; }
+});
+
+// Audio context for sound effects
+let audioCtx = null;
+function initAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+}
+
+function playSound(freq, duration, type = 'sine') {
+  if (!audioCtx) return;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = type;
+  osc.frequency.value = freq;
+  gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + duration);
+}
+
+function playCatchSound() {
+  const notes = [523, 659, 784, 880, 1047];
+  playSound(notes[Math.min(combo, notes.length - 1)], 0.2, 'sine');
+}
+
+function playMissSound() {
+  playSound(200, 0.3, 'triangle');
+}
+
+function startGame() {
+  initAudio();
+  state = STATE.PLAYING;
+  score = 0;
+  lives = 3;
+  combo = 0;
+  maxCombo = 0;
+  notes = [];
+  particles = [];
+  sparkles = [];
+  difficulty = 1;
+  frame = 0;
+}
+
+function spawnNote() {
+  const typeIdx = Math.random() < 0.15 ? 3 : Math.floor(Math.random() * 3);
+  notes.push({
+    x: 30 + Math.random() * (MAX_W - 60),
+    y: -20,
+    speed: 1.5 + Math.random() * difficulty,
+    type: NOTE_TYPES[typeIdx],
+    size: 24,
+    angle: 0,
+  });
+}
+
+function addParticles(x, y, color, count) {
+  for (let i = 0; i < count; i++) {
+    particles.push({
+      x, y,
+      vx: (Math.random() - 0.5) * 6,
+      vy: -Math.random() * 4 - 2,
+      life: 1,
+      color,
+      size: 3 + Math.random() * 4,
+    });
+  }
+}
+
+function addSparkle(x, y, text) {
+  sparkles.push({ x, y, text, life: 1, vy: -2 });
+}
+
+// Drawing functions
+function drawCat(x, y) {
+  const bounce = Math.sin(frame * 0.1) * 2;
+
+  // Body
+  ctx.fillStyle = '#ffa94d';
+  ctx.beginPath();
+  ctx.ellipse(x, y + bounce, CAT_W / 2, CAT_H / 2.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Ears
+  ctx.fillStyle = '#ffa94d';
+  ctx.beginPath();
+  ctx.moveTo(x - 22, y - 18 + bounce);
+  ctx.lineTo(x - 12, y - 35 + bounce);
+  ctx.lineTo(x - 5, y - 15 + bounce);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(x + 22, y - 18 + bounce);
+  ctx.lineTo(x + 12, y - 35 + bounce);
+  ctx.lineTo(x + 5, y - 15 + bounce);
+  ctx.fill();
+
+  // Inner ears
+  ctx.fillStyle = '#ffbdbd';
+  ctx.beginPath();
+  ctx.moveTo(x - 19, y - 18 + bounce);
+  ctx.lineTo(x - 13, y - 30 + bounce);
+  ctx.lineTo(x - 8, y - 16 + bounce);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(x + 19, y - 18 + bounce);
+  ctx.lineTo(x + 13, y - 30 + bounce);
+  ctx.lineTo(x + 8, y - 16 + bounce);
+  ctx.fill();
+
+  // Eyes
+  ctx.fillStyle = '#2d3436';
+  ctx.beginPath();
+  ctx.ellipse(x - 10, y - 5 + bounce, 4, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(x + 10, y - 5 + bounce, 4, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Eye shine
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.arc(x - 8, y - 7 + bounce, 2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(x + 12, y - 7 + bounce, 2, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Nose
+  ctx.fillStyle = '#ff6b9d';
+  ctx.beginPath();
+  ctx.moveTo(x, y + 2 + bounce);
+  ctx.lineTo(x - 3, y + 6 + bounce);
+  ctx.lineTo(x + 3, y + 6 + bounce);
+  ctx.fill();
+
+  // Mouth
+  ctx.strokeStyle = '#2d3436';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(x, y + 6 + bounce);
+  ctx.quadraticCurveTo(x - 6, y + 12 + bounce, x - 10, y + 8 + bounce);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(x, y + 6 + bounce);
+  ctx.quadraticCurveTo(x + 6, y + 12 + bounce, x + 10, y + 8 + bounce);
+  ctx.stroke();
+
+  // Whiskers
+  ctx.strokeStyle = '#636e72';
+  ctx.lineWidth = 1;
+  for (let side of [-1, 1]) {
+    for (let i = -1; i <= 1; i++) {
+      ctx.beginPath();
+      ctx.moveTo(x + side * 15, y + 3 + i * 4 + bounce);
+      ctx.lineTo(x + side * 32, y + i * 6 + bounce);
+      ctx.stroke();
+    }
+  }
+}
+
+function drawStars() {
+  ctx.fillStyle = 'rgba(255,255,255,0.6)';
+  for (let i = 0; i < 30; i++) {
+    const sx = (i * 137.5 + frame * 0.05) % MAX_W;
+    const sy = (i * 97.3) % MAX_H;
+    const sz = 1 + Math.sin(frame * 0.02 + i) * 0.5;
+    ctx.beginPath();
+    ctx.arc(sx, sy, sz, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawTitle() {
+  drawStars();
+
+  // Logo
+  ctx.textAlign = 'center';
+
+  // Title glow
+  ctx.shadowColor = '#8a5cf6';
+  ctx.shadowBlur = 20;
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 36px sans-serif';
+  ctx.fillText('Neko Catch!', MAX_W / 2, 180);
+  ctx.shadowBlur = 0;
+
+  // Subtitle
+  ctx.fillStyle = '#b0b0cc';
+  ctx.font = '14px sans-serif';
+  ctx.fillText('NEKOMUSICA', MAX_W / 2, 210);
+
+  // Cat preview
+  drawCat(MAX_W / 2, 300);
+
+  // Floating notes
+  for (let i = 0; i < 5; i++) {
+    const nx = MAX_W / 2 + Math.cos(frame * 0.03 + i * 1.3) * 80;
+    const ny = 260 + Math.sin(frame * 0.04 + i * 1.5) * 30;
+    ctx.font = '22px sans-serif';
+    ctx.fillStyle = NOTE_TYPES[i % 3].color;
+    ctx.fillText(NOTE_TYPES[i % 3].symbol, nx, ny);
+  }
+
+  // Start prompt
+  const alpha = 0.5 + Math.sin(frame * 0.06) * 0.5;
+  ctx.fillStyle = `rgba(255,255,255,${alpha})`;
+  ctx.font = '18px sans-serif';
+  ctx.fillText('Tap to Start', MAX_W / 2, 450);
+
+  // High score
+  if (highScore > 0) {
+    ctx.fillStyle = '#ffd166';
+    ctx.font = '14px sans-serif';
+    ctx.fillText(`High Score: ${highScore}`, MAX_W / 2, 490);
+  }
+}
+
+function drawHUD() {
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 18px sans-serif';
+  ctx.fillText(`Score: ${score}`, 15, 30);
+
+  // Lives as hearts
+  ctx.font = '18px sans-serif';
+  for (let i = 0; i < 3; i++) {
+    ctx.fillStyle = i < lives ? '#ff6b9d' : '#444';
+    ctx.fillText('\u2665', MAX_W - 75 + i * 22, 30);
+  }
+
+  // Combo
+  if (combo >= 3) {
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#ffd166';
+    ctx.font = 'bold 16px sans-serif';
+    ctx.fillText(`${combo} Combo!`, MAX_W / 2, 55);
+  }
+}
+
+function drawGameOver() {
+  drawStars();
+
+  ctx.textAlign = 'center';
+
+  // Overlay
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.fillRect(0, 0, MAX_W, MAX_H);
+
+  ctx.shadowColor = '#ff6b9d';
+  ctx.shadowBlur = 15;
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 32px sans-serif';
+  ctx.fillText('Game Over', MAX_W / 2, 200);
+  ctx.shadowBlur = 0;
+
+  ctx.fillStyle = '#fff';
+  ctx.font = '22px sans-serif';
+  ctx.fillText(`Score: ${score}`, MAX_W / 2, 260);
+
+  if (score >= highScore && score > 0) {
+    ctx.fillStyle = '#ffd166';
+    ctx.font = 'bold 18px sans-serif';
+    ctx.fillText('New High Score!', MAX_W / 2, 295);
+  }
+
+  ctx.fillStyle = '#b0b0cc';
+  ctx.font = '16px sans-serif';
+  ctx.fillText(`Max Combo: ${maxCombo}`, MAX_W / 2, 330);
+  ctx.fillText(`High Score: ${highScore}`, MAX_W / 2, 360);
+
+  // Sad cat
+  drawCat(MAX_W / 2, 430);
+
+  if (gameOverTimer > 60) {
+    const alpha = 0.5 + Math.sin(frame * 0.06) * 0.5;
+    ctx.fillStyle = `rgba(255,255,255,${alpha})`;
+    ctx.font = '16px sans-serif';
+    ctx.fillText('Tap to Continue', MAX_W / 2, 520);
+  }
+}
+
+// Main game loop
+function update() {
+  frame++;
+
+  if (state === STATE.PLAYING) {
+    // Move cat toward input
+    if (inputX !== null) {
+      targetX = Math.max(CAT_W / 2, Math.min(MAX_W - CAT_W / 2, inputX));
+    }
+    catX += (targetX - catX) * 0.15;
+
+    // Difficulty scaling
+    difficulty = 1 + Math.floor(score / 100) * 0.3;
+
+    // Spawn notes
+    const spawnRate = Math.max(20, 50 - difficulty * 3);
+    if (frame % Math.floor(spawnRate) === 0) {
+      spawnNote();
+    }
+
+    // Update notes
+    for (let i = notes.length - 1; i >= 0; i--) {
+      const n = notes[i];
+      n.y += n.speed;
+      n.angle += 0.03;
+
+      // Catch detection
+      const catY = MAX_H - 60;
+      const dx = n.x - catX;
+      const dy = n.y - catY;
+      if (Math.abs(dx) < CAT_W / 2 + 10 && Math.abs(dy) < CAT_H / 2 + 10) {
+        score += n.type.points * (1 + Math.floor(combo / 5));
+        combo++;
+        maxCombo = Math.max(maxCombo, combo);
+        addParticles(n.x, n.y, n.type.color, 8);
+        if (combo >= 5) addSparkle(catX, catY - 40, `${combo} Combo!`);
+        playCatchSound();
+        notes.splice(i, 1);
+        continue;
+      }
+
+      // Miss
+      if (n.y > MAX_H + 20) {
+        lives--;
+        combo = 0;
+        playMissSound();
+        notes.splice(i, 1);
+        if (lives <= 0) {
+          state = STATE.GAMEOVER;
+          gameOverTimer = 0;
+          if (score > highScore) {
+            highScore = score;
+            localStorage.setItem('nekoCatchHigh', String(highScore));
+          }
+        }
+      }
+    }
+
+    // Update particles
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.x += p.vx;
+      p.y += p.vy;
+      p.vy += 0.15;
+      p.life -= 0.025;
+      if (p.life <= 0) particles.splice(i, 1);
+    }
+
+    // Update sparkles
+    for (let i = sparkles.length - 1; i >= 0; i--) {
+      const s = sparkles[i];
+      s.y += s.vy;
+      s.life -= 0.02;
+      if (s.life <= 0) sparkles.splice(i, 1);
+    }
+  }
+
+  if (state === STATE.GAMEOVER) {
+    gameOverTimer++;
+  }
+}
+
+function draw() {
+  // Background gradient
+  const grad = ctx.createLinearGradient(0, 0, 0, MAX_H);
+  grad.addColorStop(0, '#0f0c29');
+  grad.addColorStop(0.5, '#1a1a3e');
+  grad.addColorStop(1, '#24243e');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, MAX_W, MAX_H);
+
+  if (state === STATE.TITLE) {
+    drawTitle();
+  } else if (state === STATE.PLAYING) {
+    drawStars();
+
+    // Ground line
+    ctx.strokeStyle = 'rgba(138,92,246,0.3)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, MAX_H - 30);
+    ctx.lineTo(MAX_W, MAX_H - 30);
+    ctx.stroke();
+
+    // Notes
+    ctx.textAlign = 'center';
+    for (const n of notes) {
+      ctx.save();
+      ctx.translate(n.x, n.y);
+      ctx.rotate(Math.sin(n.angle) * 0.2);
+      ctx.font = `${n.size}px sans-serif`;
+      ctx.fillStyle = n.type.color;
+      ctx.shadowColor = n.type.color;
+      ctx.shadowBlur = 10;
+      ctx.fillText(n.type.symbol, 0, 0);
+      ctx.shadowBlur = 0;
+      ctx.restore();
+    }
+
+    // Particles
+    for (const p of particles) {
+      ctx.globalAlpha = p.life;
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    // Sparkles
+    ctx.textAlign = 'center';
+    for (const s of sparkles) {
+      ctx.globalAlpha = s.life;
+      ctx.fillStyle = '#ffd166';
+      ctx.font = 'bold 16px sans-serif';
+      ctx.fillText(s.text, s.x, s.y);
+    }
+    ctx.globalAlpha = 1;
+
+    // Cat
+    drawCat(catX, MAX_H - 60);
+
+    // HUD
+    drawHUD();
+  } else if (state === STATE.GAMEOVER) {
+    drawGameOver();
+  }
+}
+
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+loop();
+</script>
+</body>
+</html>

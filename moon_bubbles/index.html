@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Moon Bubbles — 月の泡 | NEKOMUSICA</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#08060f;display:flex;justify-content:center;align-items:center;height:100vh;overflow:hidden;font-family:'Segoe UI',sans-serif;touch-action:none;user-select:none}
+canvas{border-radius:12px;box-shadow:0 0 50px rgba(138,92,246,0.3)}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<script>
+const canvas=document.getElementById('game'),ctx=canvas.getContext('2d');
+const MAX_W=400,MAX_H=700;
+let scale=1;
+function resize(){scale=Math.min(window.innerWidth/MAX_W,window.innerHeight/MAX_H,1);canvas.width=MAX_W*scale;canvas.height=MAX_H*scale;ctx.setTransform(scale,0,0,scale,0,0)}
+resize();window.addEventListener('resize',resize);
+
+let audioCtx=null;
+function initAudio(){if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)()}
+function playPop(n=1){if(!audioCtx)return;for(let i=0;i<n;i++){setTimeout(()=>{const o=audioCtx.createOscillator(),g=audioCtx.createGain();o.type='sine';o.frequency.value=600+Math.random()*400;g.gain.setValueAtTime(0.08,audioCtx.currentTime);g.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+0.15);o.connect(g);g.connect(audioCtx.destination);o.start();o.stop(audioCtx.currentTime+0.15)},i*50)}}
+
+const R=16,COLS=11;
+const COLORS=['#8a5cf6','#f472b6','#22d3ee','#fbbf24','#4ade80'];
+const STATE={TITLE:0,PLAY:1,OVER:2,WIN:3};
+let state=STATE.TITLE,frame=0,score=0,level=1;
+let grid=[],shooter={x:MAX_W/2,y:MAX_H-50,angle:-Math.PI/2,color:0,nextColor:0},bullet=null;
+let particles=[],aimPos=null;
+
+function rowOffset(row){return row%2===0?0:R}
+function gridToPos(row,col){return{x:R+col*R*2+rowOffset(row),y:R+row*R*1.75+60}}
+function posToGrid(x,y){const row=Math.round((y-R-60)/(R*1.75));const col=Math.round((x-R-rowOffset(row))/(R*2));return{row,col}}
+
+function initGrid(){
+  grid=[];
+  const rows=5+level;
+  for(let r=0;r<rows;r++){
+    const maxC=r%2===0?COLS:COLS-1;
+    const row=[];
+    for(let c=0;c<maxC;c++){row.push({color:Math.floor(Math.random()*Math.min(3+level,COLORS.length)),active:true})}
+    grid.push(row);
+  }
+}
+
+function startGame(){initAudio();state=STATE.PLAY;score=0;level=1;particles=[];initGrid();
+  shooter.color=Math.floor(Math.random()*Math.min(3+level,COLORS.length));
+  shooter.nextColor=Math.floor(Math.random()*Math.min(3+level,COLORS.length));bullet=null}
+
+function addP(x,y,c,n){for(let i=0;i<n;i++){const a=Math.random()*Math.PI*2,s=1+Math.random()*3;particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:1,color:c,size:2+Math.random()*3})}}
+
+function shoot(){
+  if(bullet)return;
+  bullet={x:shooter.x,y:shooter.y,vx:Math.cos(shooter.angle)*8,vy:Math.sin(shooter.angle)*8,color:shooter.color};
+  shooter.color=shooter.nextColor;
+  shooter.nextColor=Math.floor(Math.random()*Math.min(3+level,COLORS.length));
+}
+
+function findMatches(row,col,color,visited=new Set()){
+  const key=`${row},${col}`;
+  if(visited.has(key))return[];
+  if(row<0||row>=grid.length)return[];
+  const maxC=row%2===0?COLS:COLS-1;
+  if(col<0||col>=maxC)return[];
+  if(!grid[row][col]||!grid[row][col].active||grid[row][col].color!==color)return[];
+  visited.add(key);
+  let matches=[{row,col}];
+  const neighbors=row%2===0?
+    [[-1,-1],[-1,0],[0,-1],[0,1],[1,-1],[1,0]]:
+    [[-1,0],[-1,1],[0,-1],[0,1],[1,0],[1,1]];
+  for(const[dr,dc]of neighbors)matches=matches.concat(findMatches(row+dr,col+dc,color,visited));
+  return matches;
+}
+
+function removeFloating(){
+  const connected=new Set();
+  function flood(r,c){
+    const key=`${r},${c}`;if(connected.has(key))return;
+    if(r<0||r>=grid.length)return;const maxC=r%2===0?COLS:COLS-1;
+    if(c<0||c>=maxC)return;if(!grid[r][c]||!grid[r][c].active)return;
+    connected.add(key);
+    const neighbors=r%2===0?[[-1,-1],[-1,0],[0,-1],[0,1],[1,-1],[1,0]]:[[-1,0],[-1,1],[0,-1],[0,1],[1,0],[1,1]];
+    for(const[dr,dc]of neighbors)flood(r+dr,c+dc);
+  }
+  const maxC0=grid[0]?grid[0].length:0;
+  for(let c=0;c<maxC0;c++)if(grid[0]&&grid[0][c]&&grid[0][c].active)flood(0,c);
+  let removed=0;
+  for(let r=0;r<grid.length;r++){const maxC=r%2===0?COLS:COLS-1;for(let c=0;c<maxC;c++){
+    if(grid[r][c]&&grid[r][c].active&&!connected.has(`${r},${c}`)){
+      const p=gridToPos(r,c);addP(p.x,p.y,COLORS[grid[r][c].color],5);grid[r][c].active=false;removed++;score+=5}}}
+  return removed;
+}
+
+function snapBullet(){
+  const{row,col}=posToGrid(bullet.x,bullet.y);
+  if(row<0)return endRound();
+  while(grid.length<=row)grid.push([]);
+  const maxC=row%2===0?COLS:COLS-1;
+  const cc=Math.max(0,Math.min(col,maxC-1));
+  while(grid[row].length<=cc)grid[row].push(null);
+  grid[row][cc]={color:bullet.color,active:true};
+  const matches=findMatches(row,cc,bullet.color);
+  if(matches.length>=3){
+    for(const m of matches){const p=gridToPos(m.row,m.col);addP(p.x,p.y,COLORS[bullet.color],6);grid[m.row][m.col].active=false;score+=10}
+    playPop(matches.length);removeFloating();
+  }
+  bullet=null;
+  // Check if all cleared
+  let any=false;for(const r of grid)for(const c of r)if(c&&c.active)any=true;
+  if(!any){level++;if(level>5){state=STATE.WIN}else{initGrid()}}
+  // Check if too low
+  for(let r=0;r<grid.length;r++)for(let c=0;c<(grid[r]?grid[r].length:0);c++){
+    if(grid[r][c]&&grid[r][c].active){const p=gridToPos(r,c);if(p.y+R>MAX_H-100){state=STATE.OVER;return}}}
+}
+
+function endRound(){bullet=null}
+
+function getPos(e){const r=canvas.getBoundingClientRect(),t=e.touches?e.touches[0]:e;return{x:(t.clientX-r.left)/scale,y:(t.clientY-r.top)/scale}}
+
+canvas.addEventListener('mousemove',e=>{aimPos=getPos(e)});
+canvas.addEventListener('touchmove',e=>{e.preventDefault();aimPos=getPos(e)},{passive:false});
+canvas.addEventListener('touchstart',e=>{e.preventDefault();aimPos=getPos(e);if(state===STATE.TITLE)startGame();else if(state===STATE.OVER||state===STATE.WIN)state=STATE.TITLE},{passive:false});
+canvas.addEventListener('touchend',e=>{e.preventDefault();if(state===STATE.PLAY&&!bullet&&aimPos){
+  const dx=aimPos.x-shooter.x,dy=aimPos.y-shooter.y;
+  shooter.angle=Math.atan2(dy,dx);
+  if(shooter.angle>-0.15)shooter.angle=-0.15;if(shooter.angle<-Math.PI+0.15)shooter.angle=-Math.PI+0.15;
+  shoot()}},{passive:false});
+canvas.addEventListener('click',e=>{
+  if(state===STATE.TITLE){startGame();return}if(state===STATE.OVER||state===STATE.WIN){state=STATE.TITLE;return}
+  if(state===STATE.PLAY&&!bullet){const p=getPos(e);const dx=p.x-shooter.x,dy=p.y-shooter.y;
+    shooter.angle=Math.atan2(dy,dx);
+    if(shooter.angle>-0.15)shooter.angle=-0.15;if(shooter.angle<-Math.PI+0.15)shooter.angle=-Math.PI+0.15;
+    shoot()}});
+
+function update(){
+  frame++;
+  if(aimPos&&state===STATE.PLAY){const dx=aimPos.x-shooter.x,dy=aimPos.y-shooter.y;let a=Math.atan2(dy,dx);if(a>-0.15)a=-0.15;if(a<-Math.PI+0.15)a=-Math.PI+0.15;shooter.angle=a}
+  if(bullet){
+    bullet.x+=bullet.vx;bullet.y+=bullet.vy;
+    if(bullet.x<R){bullet.x=R;bullet.vx*=-1}
+    if(bullet.x>MAX_W-R){bullet.x=MAX_W-R;bullet.vx*=-1}
+    if(bullet.y<R+60){snapBullet();return}
+    // Check collision with grid
+    for(let r=0;r<grid.length;r++){const maxC=r%2===0?COLS:COLS-1;for(let c=0;c<maxC;c++){
+      if(!grid[r][c]||!grid[r][c].active)continue;
+      const p=gridToPos(r,c);const dx=bullet.x-p.x,dy=bullet.y-p.y;
+      if(Math.sqrt(dx*dx+dy*dy)<R*1.8){snapBullet();return}}}
+  }
+  for(let i=particles.length-1;i>=0;i--){const p=particles[i];p.x+=p.vx;p.y+=p.vy;p.vy+=0.06;p.life-=0.02;if(p.life<=0)particles.splice(i,1)}
+}
+
+function drawBg(){const g=ctx.createLinearGradient(0,0,0,MAX_H);g.addColorStop(0,'#0a0818');g.addColorStop(1,'#1a1535');ctx.fillStyle=g;ctx.fillRect(0,0,MAX_W,MAX_H);
+  for(let i=0;i<30;i++){ctx.fillStyle=`rgba(255,255,255,${0.15+Math.sin(frame*0.01+i)*0.1})`;ctx.beginPath();ctx.arc((i*137.5)%MAX_W,(i*97.3)%MAX_H,0.7,0,Math.PI*2);ctx.fill()}}
+
+function drawGrid(){
+  for(let r=0;r<grid.length;r++){const maxC=r%2===0?COLS:COLS-1;for(let c=0;c<(grid[r]?grid[r].length:0);c++){
+    if(!grid[r][c]||!grid[r][c].active)continue;
+    const p=gridToPos(r,c);
+    ctx.shadowColor=COLORS[grid[r][c].color];ctx.shadowBlur=8;
+    ctx.fillStyle=COLORS[grid[r][c].color];ctx.beginPath();ctx.arc(p.x,p.y,R-1,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='rgba(255,255,255,0.3)';ctx.beginPath();ctx.arc(p.x-3,p.y-3,R*0.35,0,Math.PI*2);ctx.fill();
+    ctx.shadowBlur=0;
+  }}
+}
+
+function drawShooter(){
+  // Aim line
+  ctx.strokeStyle='rgba(255,255,255,0.15)';ctx.lineWidth=1;ctx.setLineDash([5,5]);
+  ctx.beginPath();ctx.moveTo(shooter.x,shooter.y);ctx.lineTo(shooter.x+Math.cos(shooter.angle)*300,shooter.y+Math.sin(shooter.angle)*300);ctx.stroke();ctx.setLineDash([]);
+  // Current bubble
+  ctx.shadowColor=COLORS[shooter.color];ctx.shadowBlur=10;ctx.fillStyle=COLORS[shooter.color];ctx.beginPath();ctx.arc(shooter.x,shooter.y,R,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='rgba(255,255,255,0.3)';ctx.beginPath();ctx.arc(shooter.x-3,shooter.y-3,R*0.35,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;
+  // Next bubble
+  ctx.fillStyle=COLORS[shooter.nextColor];ctx.globalAlpha=0.5;ctx.beginPath();ctx.arc(shooter.x+40,shooter.y,R*0.7,0,Math.PI*2);ctx.fill();ctx.globalAlpha=1;
+  ctx.fillStyle='#9790a8';ctx.textAlign='center';ctx.font='10px sans-serif';ctx.fillText('NEXT',shooter.x+40,shooter.y+22);
+}
+
+function drawBullet(){if(!bullet)return;ctx.shadowColor=COLORS[bullet.color];ctx.shadowBlur=10;ctx.fillStyle=COLORS[bullet.color];ctx.beginPath();ctx.arc(bullet.x,bullet.y,R,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0}
+function drawParticles(){for(const p of particles){ctx.globalAlpha=p.life;ctx.fillStyle=p.color;ctx.beginPath();ctx.arc(p.x,p.y,p.size*p.life,0,Math.PI*2);ctx.fill()}ctx.globalAlpha=1}
+function drawHUD(){ctx.textAlign='left';ctx.fillStyle='#fff';ctx.font='bold 16px sans-serif';ctx.fillText(`Score: ${score}`,15,30);
+  ctx.textAlign='right';ctx.fillStyle='#a78bfa';ctx.font='14px sans-serif';ctx.fillText(`Level ${level}/5`,MAX_W-15,30)}
+
+function drawTitle(){drawBg();ctx.textAlign='center';
+  ctx.shadowColor='#8a5cf6';ctx.shadowBlur=30;ctx.fillStyle='#fff';ctx.font='bold 38px sans-serif';ctx.fillText('Moon Bubbles',MAX_W/2,240);ctx.shadowBlur=0;
+  ctx.fillStyle='#a78bfa';ctx.font='18px sans-serif';ctx.fillText('— 月の泡 —',MAX_W/2,275);
+  ctx.fillStyle='#9790a8';ctx.font='14px sans-serif';ctx.fillText('タップで泡を撃って',MAX_W/2,320);ctx.fillText('3つ以上揃えて消そう',MAX_W/2,342);
+  COLORS.forEach((c,i)=>{ctx.fillStyle=c;ctx.beginPath();ctx.arc(120+i*45,410,12,0,Math.PI*2);ctx.fill()});
+  const a=0.4+Math.sin(frame*0.05)*0.4;ctx.fillStyle=`rgba(255,255,255,${a})`;ctx.font='16px sans-serif';ctx.fillText('Tap to Start',MAX_W/2,520);
+  ctx.fillStyle='#4a4560';ctx.font='11px sans-serif';ctx.fillText('NEKOMUSICA',MAX_W/2,MAX_H-30)}
+
+function drawEnd(title,sub){drawBg();ctx.textAlign='center';ctx.fillStyle='rgba(0,0,0,0.4)';ctx.fillRect(0,0,MAX_W,MAX_H);
+  ctx.shadowColor='#fbbf24';ctx.shadowBlur=20;ctx.fillStyle='#fff';ctx.font='bold 32px sans-serif';ctx.fillText(title,MAX_W/2,240);ctx.shadowBlur=0;
+  ctx.fillStyle='#fff';ctx.font='24px sans-serif';ctx.fillText(`${score}`,MAX_W/2,300);ctx.fillStyle='#9790a8';ctx.font='14px sans-serif';ctx.fillText(sub,MAX_W/2,335);
+  const a=0.4+Math.sin(frame*0.05)*0.4;ctx.fillStyle=`rgba(255,255,255,${a})`;ctx.font='16px sans-serif';ctx.fillText('Tap to Continue',MAX_W/2,460);
+  ctx.fillStyle='#4a4560';ctx.font='11px sans-serif';ctx.fillText('NEKOMUSICA',MAX_W/2,MAX_H-30)}
+
+function loop(){update();
+  if(state===STATE.TITLE)drawTitle();
+  else if(state===STATE.PLAY){drawBg();drawGrid();drawShooter();drawBullet();drawParticles();drawHUD()}
+  else if(state===STATE.OVER)drawEnd('Game Over','泡が下まで来てしまった...');
+  else drawEnd('All Clear!','すべての泡を消した！');
+  requestAnimationFrame(loop)}
+loop();
+</script>
+</body>
+</html>

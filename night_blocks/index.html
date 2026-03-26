@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Night Blocks — 夜のブロック | NEKOMUSICA</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#08060f;display:flex;justify-content:center;align-items:center;height:100vh;overflow:hidden;font-family:'Segoe UI',sans-serif;touch-action:none;user-select:none}
+canvas{border-radius:12px;box-shadow:0 0 50px rgba(138,92,246,0.3)}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<script>
+const canvas=document.getElementById('game'),ctx=canvas.getContext('2d');
+const MAX_W=400,MAX_H=700;
+let scale=1;
+function resize(){scale=Math.min(window.innerWidth/MAX_W,window.innerHeight/MAX_H,1);canvas.width=MAX_W*scale;canvas.height=MAX_H*scale;ctx.setTransform(scale,0,0,scale,0,0)}
+resize();window.addEventListener('resize',resize);
+
+let audioCtx=null;
+function initAudio(){if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)()}
+function playSound(f,d=0.15){if(!audioCtx)return;const o=audioCtx.createOscillator(),g=audioCtx.createGain();o.type='square';o.frequency.value=f;g.gain.setValueAtTime(0.06,audioCtx.currentTime);g.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+d);o.connect(g);g.connect(audioCtx.destination);o.start();o.stop(audioCtx.currentTime+d)}
+function playClear(n){[523,659,784,1047].slice(0,n).forEach((f,i)=>setTimeout(()=>playSound(f,0.2),i*80))}
+
+const COLS=10,ROWS=20,CELL=30;
+const OX=(MAX_W-COLS*CELL)/2,OY=40;
+const SHAPES=[
+  {blocks:[[0,0],[1,0],[2,0],[3,0]],color:'#22d3ee'},//I
+  {blocks:[[0,0],[1,0],[0,1],[1,1]],color:'#fbbf24'},//O
+  {blocks:[[0,0],[1,0],[2,0],[1,1]],color:'#8a5cf6'},//T
+  {blocks:[[1,0],[2,0],[0,1],[1,1]],color:'#4ade80'},//S
+  {blocks:[[0,0],[1,0],[1,1],[2,1]],color:'#f472b6'},//Z
+  {blocks:[[0,0],[0,1],[1,1],[2,1]],color:'#fb923c'},//L
+  {blocks:[[2,0],[0,1],[1,1],[2,1]],color:'#60a5fa'},//J
+];
+const STATE={TITLE:0,PLAY:1,OVER:2};
+let state=STATE.TITLE,frame=0,score=0,lines=0,level=1,highScore=parseInt(localStorage.getItem('nightBlocksHigh')||'0');
+let board=[],current=null,next=null,dropTimer=0,lockTimer=0;
+let particles=[],clearingRows=[];
+let touchStartPos=null,lastTap=0;
+
+function newPiece(){const s=SHAPES[Math.floor(Math.random()*SHAPES.length)];return{blocks:s.blocks.map(b=>[...b]),color:s.color,x:3,y:0}}
+function startGame(){initAudio();state=STATE.PLAY;score=0;lines=0;level=1;frame=0;
+  board=Array.from({length:ROWS},()=>Array(COLS).fill(null));
+  current=newPiece();next=newPiece();particles=[];clearingRows=[]}
+
+function valid(piece,ox=0,oy=0){
+  for(const[bx,by]of piece.blocks){
+    const nx=piece.x+bx+ox,ny=piece.y+by+oy;
+    if(nx<0||nx>=COLS||ny>=ROWS)return false;
+    if(ny>=0&&board[ny][nx])return false;
+  }return true;
+}
+
+function lock(){
+  for(const[bx,by]of current.blocks){
+    const nx=current.x+bx,ny=current.y+by;
+    if(ny<0){if(score>highScore){highScore=score;localStorage.setItem('nightBlocksHigh',String(highScore))}state=STATE.OVER;return}
+    board[ny][nx]=current.color;
+  }
+  // Check lines
+  let cleared=0;
+  for(let r=ROWS-1;r>=0;r--){
+    if(board[r].every(c=>c)){board.splice(r,1);board.unshift(Array(COLS).fill(null));cleared++;r++;
+      for(let c=0;c<COLS;c++)particles.push({x:OX+c*CELL+CELL/2,y:OY+r*CELL,vx:(Math.random()-0.5)*4,vy:-2-Math.random()*3,life:1,color:'#fbbf24',size:3})}
+  }
+  if(cleared>0){const pts=[0,100,300,500,800];score+=pts[cleared]*level;lines+=cleared;level=Math.floor(lines/10)+1;playClear(cleared)}
+  else playSound(200,0.05);
+  current=next;next=newPiece();dropTimer=0;
+}
+
+function rotate(){
+  const rotated=current.blocks.map(([x,y])=>[-y,x]);
+  const minX=Math.min(...rotated.map(b=>b[0])),minY=Math.min(...rotated.map(b=>b[1]));
+  const adjusted=rotated.map(([x,y])=>[x-minX,y-minY]);
+  const old=current.blocks;current.blocks=adjusted;
+  if(!valid(current)){
+    // Wall kick
+    for(const kick of[-1,1,-2,2]){if(valid(current,kick,0)){current.x+=kick;return}}
+    current.blocks=old;
+  }
+}
+
+function drop(){if(valid(current,0,1)){current.y++;dropTimer=0}else lock()}
+function hardDrop(){while(valid(current,0,1))current.y++;lock()}
+function move(dx){if(valid(current,dx,0))current.x+=dx}
+
+// Touch
+canvas.addEventListener('touchstart',e=>{e.preventDefault();
+  if(state!==STATE.PLAY){if(state===STATE.TITLE)startGame();else state=STATE.TITLE;return}
+  const r=canvas.getBoundingClientRect();touchStartPos={x:(e.touches[0].clientX-r.left)/scale,y:(e.touches[0].clientY-r.top)/scale,t:Date.now()}},{passive:false});
+canvas.addEventListener('touchend',e=>{e.preventDefault();if(!touchStartPos||state!==STATE.PLAY)return;
+  const r=canvas.getBoundingClientRect();const end={x:(e.changedTouches[0].clientX-r.left)/scale,y:(e.changedTouches[0].clientY-r.top)/scale};
+  const dx=end.x-touchStartPos.x,dy=end.y-touchStartPos.y,dt=Date.now()-touchStartPos.t;
+  if(Math.abs(dx)<15&&Math.abs(dy)<15&&dt<300){
+    // Tap - rotate or move based on position
+    if(touchStartPos.y<OY+ROWS*CELL*0.3)rotate();
+    else if(touchStartPos.x<MAX_W*0.35)move(-1);
+    else if(touchStartPos.x>MAX_W*0.65)move(1);
+    else hardDrop();
+  }else if(Math.abs(dy)>30&&dy>0&&Math.abs(dy)>Math.abs(dx))hardDrop();
+  else if(Math.abs(dx)>20){if(dx>0)move(1);else move(-1)}
+  touchStartPos=null},{passive:false});
+canvas.addEventListener('click',e=>{if(state===STATE.TITLE)startGame();else if(state===STATE.OVER)state=STATE.TITLE});
+document.addEventListener('keydown',e=>{if(state!==STATE.PLAY)return;
+  if(e.key==='ArrowLeft')move(-1);else if(e.key==='ArrowRight')move(1);
+  else if(e.key==='ArrowUp')rotate();else if(e.key==='ArrowDown')drop();
+  else if(e.key===' ')hardDrop()});
+
+function update(){
+  frame++;
+  if(state!==STATE.PLAY)return;
+  const spd=Math.max(3,30-level*3);
+  dropTimer++;if(dropTimer>=spd)drop();
+  for(let i=particles.length-1;i>=0;i--){const p=particles[i];p.x+=p.vx;p.y+=p.vy;p.vy+=0.1;p.life-=0.02;if(p.life<=0)particles.splice(i,1)}
+}
+
+function drawBg(){const g=ctx.createLinearGradient(0,0,0,MAX_H);g.addColorStop(0,'#08060f');g.addColorStop(1,'#12102a');ctx.fillStyle=g;ctx.fillRect(0,0,MAX_W,MAX_H);
+  for(let i=0;i<25;i++){ctx.fillStyle=`rgba(255,255,255,${0.15+Math.sin(frame*0.01+i)*0.1})`;ctx.beginPath();ctx.arc((i*137.5)%MAX_W,(i*97.3)%MAX_H,0.7,0,Math.PI*2);ctx.fill()}}
+
+function drawBoard(){
+  ctx.fillStyle='rgba(0,0,0,0.3)';ctx.fillRect(OX,OY,COLS*CELL,ROWS*CELL);
+  ctx.strokeStyle='rgba(138,92,246,0.08)';ctx.lineWidth=1;
+  for(let r=0;r<=ROWS;r++){ctx.beginPath();ctx.moveTo(OX,OY+r*CELL);ctx.lineTo(OX+COLS*CELL,OY+r*CELL);ctx.stroke()}
+  for(let c=0;c<=COLS;c++){ctx.beginPath();ctx.moveTo(OX+c*CELL,OY);ctx.lineTo(OX+c*CELL,OY+ROWS*CELL);ctx.stroke()}
+  for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++){
+    if(!board[r][c])continue;
+    ctx.fillStyle=board[r][c];ctx.shadowColor=board[r][c];ctx.shadowBlur=4;
+    ctx.fillRect(OX+c*CELL+1,OY+r*CELL+1,CELL-2,CELL-2);
+    ctx.fillStyle='rgba(255,255,255,0.15)';ctx.fillRect(OX+c*CELL+2,OY+r*CELL+2,CELL-6,4);
+    ctx.shadowBlur=0;
+  }
+}
+
+function drawPiece(piece,ox,oy,alpha=1){
+  ctx.globalAlpha=alpha;
+  for(const[bx,by]of piece.blocks){
+    ctx.fillStyle=piece.color;ctx.shadowColor=piece.color;ctx.shadowBlur=6;
+    ctx.fillRect(ox+(piece.x+bx)*CELL+1,oy+(piece.y+by)*CELL+1,CELL-2,CELL-2);
+    ctx.fillStyle='rgba(255,255,255,0.2)';ctx.fillRect(ox+(piece.x+bx)*CELL+2,oy+(piece.y+by)*CELL+2,CELL-6,4);
+    ctx.shadowBlur=0;
+  }ctx.globalAlpha=1;
+}
+
+function drawGhost(){
+  let gy=0;while(valid(current,0,gy+1))gy++;
+  if(gy===0)return;
+  ctx.globalAlpha=0.15;
+  for(const[bx,by]of current.blocks){
+    ctx.fillStyle=current.color;ctx.fillRect(OX+(current.x+bx)*CELL+1,OY+(current.y+by+gy)*CELL+1,CELL-2,CELL-2);
+  }ctx.globalAlpha=1;
+}
+
+function drawNext(){
+  ctx.fillStyle='#9790a8';ctx.textAlign='center';ctx.font='11px sans-serif';ctx.fillText('NEXT',OX+COLS*CELL+35,OY+10);
+  if(!next)return;
+  for(const[bx,by]of next.blocks){
+    ctx.fillStyle=next.color;ctx.fillRect(OX+COLS*CELL+10+bx*20,OY+20+by*20,18,18);
+  }
+}
+
+function drawHUD(){
+  ctx.textAlign='left';ctx.fillStyle='#fff';ctx.font='bold 14px sans-serif';
+  const rx=OX+COLS*CELL+10;
+  ctx.fillText(`Score`,rx,OY+120);ctx.fillStyle='#fbbf24';ctx.font='bold 18px sans-serif';ctx.fillText(`${score}`,rx,OY+142);
+  ctx.fillStyle='#fff';ctx.font='bold 14px sans-serif';ctx.fillText(`Lines`,rx,OY+180);ctx.fillStyle='#a78bfa';ctx.font='18px sans-serif';ctx.fillText(`${lines}`,rx,OY+200);
+  ctx.fillStyle='#fff';ctx.font='bold 14px sans-serif';ctx.fillText(`Level`,rx,OY+240);ctx.fillStyle='#22d3ee';ctx.font='18px sans-serif';ctx.fillText(`${level}`,rx,OY+260);
+}
+
+function drawParticles(){for(const p of particles){ctx.globalAlpha=p.life;ctx.fillStyle=p.color;ctx.beginPath();ctx.arc(p.x,p.y,p.size*p.life,0,Math.PI*2);ctx.fill()}ctx.globalAlpha=1}
+
+function drawTitle(){drawBg();ctx.textAlign='center';
+  ctx.shadowColor='#8a5cf6';ctx.shadowBlur=30;ctx.fillStyle='#fff';ctx.font='bold 38px sans-serif';ctx.fillText('Night Blocks',MAX_W/2,240);ctx.shadowBlur=0;
+  ctx.fillStyle='#a78bfa';ctx.font='18px sans-serif';ctx.fillText('— 夜のブロック —',MAX_W/2,275);
+  ctx.fillStyle='#9790a8';ctx.font='14px sans-serif';ctx.fillText('左右タップで移動、上タップで回転',MAX_W/2,320);ctx.fillText('下スワイプでハードドロップ',MAX_W/2,342);
+  SHAPES.forEach((s,i)=>{ctx.fillStyle=s.color;s.blocks.forEach(([x,y])=>{ctx.fillRect(60+i*48+x*10,400+y*10,9,9)})});
+  const a=0.4+Math.sin(frame*0.05)*0.4;ctx.fillStyle=`rgba(255,255,255,${a})`;ctx.font='16px sans-serif';ctx.fillText('Tap to Start',MAX_W/2,520);
+  if(highScore>0){ctx.fillStyle='#fbbf24';ctx.font='14px sans-serif';ctx.fillText(`High Score: ${highScore}`,MAX_W/2,560)}
+  ctx.fillStyle='#4a4560';ctx.font='11px sans-serif';ctx.fillText('NEKOMUSICA',MAX_W/2,MAX_H-30)}
+
+function drawOver(){drawBg();drawBoard();ctx.fillStyle='rgba(0,0,0,0.6)';ctx.fillRect(0,0,MAX_W,MAX_H);ctx.textAlign='center';
+  ctx.shadowColor='#ff6b9d';ctx.shadowBlur=20;ctx.fillStyle='#fff';ctx.font='bold 32px sans-serif';ctx.fillText('Game Over',MAX_W/2,240);ctx.shadowBlur=0;
+  ctx.fillStyle='#fff';ctx.font='22px sans-serif';ctx.fillText(`${score}`,MAX_W/2,300);ctx.fillStyle='#9790a8';ctx.font='14px sans-serif';ctx.fillText(`${lines} Lines / Level ${level}`,MAX_W/2,330);
+  if(score>=highScore&&score>0){ctx.fillStyle='#fbbf24';ctx.font='bold 16px sans-serif';ctx.fillText('New High Score!',MAX_W/2,370)}
+  const a=0.4+Math.sin(frame*0.05)*0.4;ctx.fillStyle=`rgba(255,255,255,${a})`;ctx.font='16px sans-serif';ctx.fillText('Tap to Continue',MAX_W/2,460);
+  ctx.fillStyle='#4a4560';ctx.font='11px sans-serif';ctx.fillText('NEKOMUSICA',MAX_W/2,MAX_H-30)}
+
+function loop(){update();
+  if(state===STATE.TITLE)drawTitle();
+  else if(state===STATE.PLAY){drawBg();drawBoard();if(current){drawGhost();drawPiece(current,OX,OY)}drawNext();drawHUD();drawParticles()}
+  else drawOver();
+  requestAnimationFrame(loop)}
+loop();
+</script>
+</body>
+</html>

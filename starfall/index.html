@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Starfall — 星降る夜 | NEKOMUSICA</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#08060f;display:flex;justify-content:center;align-items:center;height:100vh;overflow:hidden;font-family:'Segoe UI',sans-serif;touch-action:none;user-select:none}
+canvas{border-radius:12px;box-shadow:0 0 50px rgba(138,92,246,0.3)}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<script>
+const canvas=document.getElementById('game'),ctx=canvas.getContext('2d');
+const MAX_W=400,MAX_H=700;
+let scale=1;
+function resize(){scale=Math.min(window.innerWidth/MAX_W,window.innerHeight/MAX_H,1);canvas.width=MAX_W*scale;canvas.height=MAX_H*scale;ctx.setTransform(scale,0,0,scale,0,0)}
+resize();window.addEventListener('resize',resize);
+
+let audioCtx=null;
+function initAudio(){if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)()}
+function playSound(f,d=0.2,t='sine'){if(!audioCtx)return;const o=audioCtx.createOscillator(),g=audioCtx.createGain();o.type=t;o.frequency.value=f;g.gain.setValueAtTime(0.1,audioCtx.currentTime);g.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+d);o.connect(g);g.connect(audioCtx.destination);o.start();o.stop(audioCtx.currentTime+d)}
+
+const STATE={TITLE:0,PLAY:1,OVER:2};
+let state=STATE.TITLE,frame=0,score=0,lives=3,combo=0,highScore=parseInt(localStorage.getItem('starfallHigh')||'0');
+let playerX=MAX_W/2,targetX=MAX_W/2,shielded=false,shieldTimer=0;
+let meteors=[],stars=[],powerups=[],particles=[];
+let inputX=null;
+
+function startGame(){initAudio();state=STATE.PLAY;score=0;lives=3;combo=0;playerX=MAX_W/2;targetX=MAX_W/2;shielded=false;shieldTimer=0;meteors=[];stars=[];powerups=[];particles=[];frame=0}
+
+function addP(x,y,c,n){for(let i=0;i<n;i++){const a=Math.random()*Math.PI*2,s=1+Math.random()*3;particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:1,color:c,size:2+Math.random()*3})}}
+
+canvas.addEventListener('mousemove',e=>{const r=canvas.getBoundingClientRect();inputX=(e.clientX-r.left)/scale});
+canvas.addEventListener('touchmove',e=>{e.preventDefault();const r=canvas.getBoundingClientRect();inputX=(e.touches[0].clientX-r.left)/scale},{passive:false});
+canvas.addEventListener('touchstart',e=>{e.preventDefault();const r=canvas.getBoundingClientRect();inputX=(e.touches[0].clientX-r.left)/scale;if(state===STATE.TITLE)startGame();else if(state===STATE.OVER)state=STATE.TITLE},{passive:false});
+canvas.addEventListener('click',()=>{if(state===STATE.TITLE)startGame();else if(state===STATE.OVER)state=STATE.TITLE});
+
+function update(){
+  frame++;
+  if(state!==STATE.PLAY)return;
+  const diff=1+frame*0.0003;
+  if(inputX!==null)targetX=Math.max(20,Math.min(MAX_W-20,inputX));
+  playerX+=(targetX-playerX)*0.12;
+  if(shielded){shieldTimer--;if(shieldTimer<=0)shielded=false}
+  // Spawn
+  if(frame%Math.max(8,30-Math.floor(diff*3))===0)meteors.push({x:20+Math.random()*(MAX_W-40),y:-20,speed:2+Math.random()*diff*1.5,size:8+Math.random()*8});
+  if(frame%50===0)stars.push({x:20+Math.random()*(MAX_W-40),y:-20,speed:1.5+Math.random(),phase:Math.random()*Math.PI*2});
+  if(frame%400===0&&!shielded)powerups.push({x:20+Math.random()*(MAX_W-40),y:-20,speed:1.2});
+  // Update meteors
+  const py=MAX_H-60;
+  for(let i=meteors.length-1;i>=0;i--){
+    meteors[i].y+=meteors[i].speed;
+    const dx=meteors[i].x-playerX,dy=meteors[i].y-py;
+    if(Math.sqrt(dx*dx+dy*dy)<meteors[i].size+15){
+      if(shielded){addP(meteors[i].x,meteors[i].y,'#22d3ee',8);playSound(600,0.15)}
+      else{lives--;combo=0;addP(playerX,py,'#ff6b6b',15);playSound(150,0.3,'triangle');if(lives<=0){if(score>highScore){highScore=score;localStorage.setItem('starfallHigh',String(highScore))}state=STATE.OVER}}
+      meteors.splice(i,1);continue;
+    }
+    if(meteors[i].y>MAX_H+30)meteors.splice(i,1);
+  }
+  // Update stars
+  for(let i=stars.length-1;i>=0;i--){
+    stars[i].y+=stars[i].speed;
+    const dx=stars[i].x-playerX,dy=stars[i].y-py;
+    if(Math.sqrt(dx*dx+dy*dy)<25){score+=10+combo;combo++;addP(stars[i].x,stars[i].y,'#fbbf24',8);playSound(523+combo*50,0.15);stars.splice(i,1);continue}
+    if(stars[i].y>MAX_H+20)stars.splice(i,1);
+  }
+  // Update powerups
+  for(let i=powerups.length-1;i>=0;i--){
+    powerups[i].y+=powerups[i].speed;
+    const dx=powerups[i].x-playerX,dy=powerups[i].y-py;
+    if(Math.sqrt(dx*dx+dy*dy)<25){shielded=true;shieldTimer=300;addP(powerups[i].x,powerups[i].y,'#22d3ee',15);playSound(880,0.3);powerups.splice(i,1);continue}
+    if(powerups[i].y>MAX_H+20)powerups.splice(i,1);
+  }
+  for(let i=particles.length-1;i>=0;i--){const p=particles[i];p.x+=p.vx;p.y+=p.vy;p.vy+=0.08;p.life-=0.02;if(p.life<=0)particles.splice(i,1)}
+}
+
+function drawBg(){const g=ctx.createLinearGradient(0,0,0,MAX_H);g.addColorStop(0,'#0a0818');g.addColorStop(1,'#1a1535');ctx.fillStyle=g;ctx.fillRect(0,0,MAX_W,MAX_H);
+  for(let i=0;i<50;i++){ctx.fillStyle=`rgba(255,255,255,${0.2+Math.sin(frame*0.015+i)*0.2})`;ctx.beginPath();ctx.arc((i*137.5)%MAX_W,(i*97.3)%MAX_H,0.8,0,Math.PI*2);ctx.fill()}}
+
+function drawPlayer(){
+  const py=MAX_H-60;
+  if(shielded){ctx.strokeStyle='rgba(34,211,238,'+( 0.3+Math.sin(frame*0.1)*0.2)+')';ctx.lineWidth=2;ctx.beginPath();ctx.arc(playerX,py,28,0,Math.PI*2);ctx.stroke()}
+  // Crescent moon
+  ctx.fillStyle='#fbbf24';ctx.beginPath();ctx.arc(playerX,py,16,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle=state===STATE.PLAY?'#1a1535':'#08060f';ctx.beginPath();ctx.arc(playerX+7,py-3,13,0,Math.PI*2);ctx.fill();
+}
+
+function drawMeteors(){for(const m of meteors){ctx.shadowColor='#ff6b6b';ctx.shadowBlur=15;ctx.fillStyle='#ff6b6b';ctx.beginPath();ctx.arc(m.x,m.y,m.size,0,Math.PI*2);ctx.fill();ctx.fillStyle='#ffa07a';ctx.beginPath();ctx.arc(m.x,m.y,m.size*0.5,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0}}
+function drawStars(){ctx.textAlign='center';ctx.textBaseline='middle';for(const s of stars){const p=Math.sin(frame*0.05+s.phase)*0.3;ctx.fillStyle='#fbbf24';ctx.globalAlpha=0.7+p;ctx.font='18px sans-serif';ctx.fillText('★',s.x,s.y);ctx.globalAlpha=1}}
+function drawPowerups(){for(const p of powerups){ctx.shadowColor='#22d3ee';ctx.shadowBlur=12;ctx.strokeStyle='#22d3ee';ctx.lineWidth=2;ctx.beginPath();ctx.arc(p.x,p.y,12,0,Math.PI*2);ctx.stroke();ctx.fillStyle='#22d3ee';ctx.textAlign='center';ctx.textBaseline='middle';ctx.font='14px sans-serif';ctx.fillText('S',p.x,p.y);ctx.shadowBlur=0}}
+function drawParticles(){for(const p of particles){ctx.globalAlpha=p.life;ctx.fillStyle=p.color;ctx.beginPath();ctx.arc(p.x,p.y,p.size*p.life,0,Math.PI*2);ctx.fill()}ctx.globalAlpha=1}
+
+function drawHUD(){
+  ctx.textAlign='left';ctx.fillStyle='#fff';ctx.font='bold 16px sans-serif';ctx.fillText(`Score: ${score}`,15,35);
+  ctx.textAlign='right';for(let i=0;i<3;i++){ctx.fillStyle=i<lives?'#ff6b9d':'#333';ctx.font='18px sans-serif';ctx.fillText('♥',MAX_W-15-i*24,35)}
+  if(combo>=5){ctx.textAlign='center';ctx.fillStyle='#fbbf24';ctx.font='bold 14px sans-serif';ctx.fillText(`${combo} Combo!`,MAX_W/2,60)}
+}
+
+function drawTitle(){drawBg();ctx.textAlign='center';
+  ctx.shadowColor='#8a5cf6';ctx.shadowBlur=30;ctx.fillStyle='#fff';ctx.font='bold 40px sans-serif';ctx.fillText('Starfall',MAX_W/2,240);ctx.shadowBlur=0;
+  ctx.fillStyle='#a78bfa';ctx.font='18px sans-serif';ctx.fillText('— 星降る夜 —',MAX_W/2,275);
+  ctx.fillStyle='#9790a8';ctx.font='14px sans-serif';ctx.fillText('月を動かして星を集めよう',MAX_W/2,320);ctx.fillText('隕石に当たらないように！',MAX_W/2,342);
+  drawPlayer();
+  const a=0.4+Math.sin(frame*0.05)*0.4;ctx.fillStyle=`rgba(255,255,255,${a})`;ctx.font='16px sans-serif';ctx.fillText('Tap to Start',MAX_W/2,520);
+  if(highScore>0){ctx.fillStyle='#fbbf24';ctx.font='14px sans-serif';ctx.fillText(`High Score: ${highScore}`,MAX_W/2,560)}
+  ctx.fillStyle='#4a4560';ctx.font='11px sans-serif';ctx.fillText('NEKOMUSICA',MAX_W/2,MAX_H-30)}
+
+function drawOver(){drawBg();ctx.textAlign='center';ctx.fillStyle='rgba(0,0,0,0.4)';ctx.fillRect(0,0,MAX_W,MAX_H);
+  ctx.shadowColor='#ff6b9d';ctx.shadowBlur=20;ctx.fillStyle='#fff';ctx.font='bold 32px sans-serif';ctx.fillText('Game Over',MAX_W/2,220);ctx.shadowBlur=0;
+  ctx.fillStyle='#fff';ctx.font='24px sans-serif';ctx.fillText(`${score}`,MAX_W/2,290);ctx.fillStyle='#9790a8';ctx.font='14px sans-serif';ctx.fillText('Score',MAX_W/2,315);
+  if(score>=highScore&&score>0){ctx.fillStyle='#fbbf24';ctx.font='bold 16px sans-serif';ctx.fillText('New High Score!',MAX_W/2,360)}
+  const a=0.4+Math.sin(frame*0.05)*0.4;ctx.fillStyle=`rgba(255,255,255,${a})`;ctx.font='16px sans-serif';ctx.fillText('Tap to Continue',MAX_W/2,460);
+  ctx.fillStyle='#4a4560';ctx.font='11px sans-serif';ctx.fillText('NEKOMUSICA',MAX_W/2,MAX_H-30)}
+
+function loop(){update();
+  if(state===STATE.TITLE)drawTitle();
+  else if(state===STATE.PLAY){drawBg();drawMeteors();drawStars();drawPowerups();drawPlayer();drawParticles();drawHUD()}
+  else drawOver();
+  requestAnimationFrame(loop)}
+loop();
+</script>
+</body>
+</html>
